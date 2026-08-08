@@ -220,17 +220,53 @@ with st.sidebar:
         ["🔍 Consulta & Processos", "📜 Histórico de Consultas"]
     )
     
-    # PAINEL EXCLUSIVO PARA O ADMIN CRIAR CONTAS
+    # PAINEL EXCLUSIVO PARA O ADMIN GERIR CONTAS (CRIAR, EDITAR, EXCLUIR)
     if usuario_atual == "admin":
-        with st.expander("🛠️ Criar Conta para Amigo"):
-            novo_user = st.text_input("Novo Utilizador:")
-            nova_pass = st.text_input("Nova Palavra-passe:", type="password")
-            if st.button("➕ Criar Conta", use_container_width=True):
-                if novo_user.strip() and nova_pass.strip():
-                    st.session_state["usuarios_cadastrados"][novo_user.strip()] = nova_pass.strip()
-                    st.success(f"Conta '{novo_user}' criada com sucesso!")
-                else:
-                    st.warning("Preencha todos os campos.")
+        with st.expander("🛠️ Gerir Contas de Utilizadores"):
+            tab_criar, tab_gerir = st.tabs(["➕ Criar", "✏️/🗑️ Editar/Excluir"])
+            
+            # Aba 1: Criar Conta
+            with tab_criar:
+                novo_user = st.text_input("Novo Utilizador:", key="input_novo_user")
+                nova_pass = st.text_input("Nova Palavra-passe:", type="password", key="input_nova_pass")
+                if st.button("➕ Criar Conta", use_container_width=True):
+                    if novo_user.strip() and nova_pass.strip():
+                        if novo_user.strip() in st.session_state["usuarios_cadastrados"]:
+                            st.warning("⚠️ Esse utilizador já existe.")
+                        else:
+                            st.session_state["usuarios_cadastrados"][novo_user.strip()] = nova_pass.strip()
+                            st.success(f"✅ Conta '{novo_user}' criada com sucesso!")
+                            st.rerun()
+                    else:
+                        st.warning("Preencha todos os campos.")
+
+            # Aba 2: Editar ou Excluir Conta
+            with tab_gerir:
+                usuarios_lista = list(st.session_state["usuarios_cadastrados"].keys())
+                user_selecionado = st.selectbox("Selecione o utilizador:", usuarios_lista, key="select_user_gerir")
+                
+                # Campo para alterar a palavra-passe
+                nova_senha_edit = st.text_input(f"Nova palavra-passe para '{user_selecionado}':", type="password", key="input_edit_pass")
+                
+                col_acao1, col_acao2 = st.columns(2)
+                
+                with col_acao1:
+                    if st.button("💾 Atualizar", use_container_width=True):
+                        if nova_senha_edit.strip():
+                            st.session_state["usuarios_cadastrados"][user_selecionado] = nova_senha_edit.strip()
+                            st.success(f"✅ Palavra-passe atualizada!")
+                            st.rerun()
+                        else:
+                            st.warning("Digite a nova palavra-passe.")
+                
+                with col_acao2:
+                    if user_selecionado == "admin":
+                        st.caption("🔒 O admin não pode ser excluído.")
+                    else:
+                        if st.button("🗑️ Excluir", type="primary", use_container_width=True):
+                            del st.session_state["usuarios_cadastrados"][user_selecionado]
+                            st.success(f"✅ Conta '{user_selecionado}' excluída!")
+                            st.rerun()
 
     st.markdown("---")
     st.subheader("⚙️ Consulta Telegram")
