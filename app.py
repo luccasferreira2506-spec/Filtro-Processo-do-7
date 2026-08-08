@@ -54,7 +54,6 @@ if "banco_carregado" not in st.session_state:
     st.session_state["historicos_por_usuario"] = dados_nuvem.get("historicos", {})
     st.session_state["banco_carregado"] = True
 
-    # Se a planilha tiver vazia e não tiver o admin, criamos o admin padrão
     if "admin" not in st.session_state["usuarios_cadastrados"]:
         st.session_state["usuarios_cadastrados"]["admin"] = st.secrets.get("SENHA_APP", "123456")
         salvar_dados()
@@ -73,7 +72,6 @@ if "processos_lista" not in st.session_state:
 # ==============================================================================
 # 🔒 SISTEMA DE LOGIN
 # ==============================================================================
-# Controlo de expiração (1 hora)
 if st.session_state["usuario_logado"] and st.session_state["login_tempo"]:
     if (datetime.now() - st.session_state["login_tempo"]).total_seconds() > 3600:
         st.session_state["usuario_logado"] = None
@@ -162,6 +160,7 @@ def carregar_e_estruturar_relatorio(conteudo_texto):
             "numero": extrair_campo(r'PROCESSO:\s*(.*)', bloco),
             "classe": extrair_campo(r'CLASSE:\s*(.*)', bloco),
             "valor": extrair_campo(r'VALOR:\s*(.*)', bloco),
+            "advogado": extrair_campo(r'ADVOGADO:\s*(.*)', bloco),  # <-- DADOS DO ADVOGADO RESTAURADOS
             "polo_ativo_nome": extrair_campo(r'POLO ATIVO:\s*[\s\S]*?-\s*NOME:\s*(.*?)\n', bloco),
             "polo_ativo_doc": extrair_campo(r'POLO ATIVO:\s*[\s\S]*?-\s*DOC:\s*(.*?)\n', bloco, "Sem CPF/DOC"),
             "polo_ativo_renda": extrair_campo(r'POLO ATIVO:\s*[\s\S]*?-\s*RENDA:\s*(.*?)\n', bloco),
@@ -186,7 +185,6 @@ def salvar_no_historico(origem, conteudo):
     }
     hist_usuario = st.session_state["historicos_por_usuario"][usuario_atual]
     
-    # Adiciona se for novo e ENVIA PARA A PLANILHA
     if not hist_usuario or hist_usuario[0]["conteudo_original"] != conteudo:
         hist_usuario.insert(0, item)
         salvar_dados() 
@@ -207,7 +205,7 @@ with st.sidebar:
 
     menu_escolha = st.radio("Navegação:", ["🔍 Consulta & Processos", "📜 Histórico de Consultas"])
     
-    # ------------------ PAINEL ADMIN COM LIGAÇÃO DIRETA À PLANILHA ------------------
+    # PAINEL ADMIN
     if usuario_atual == "admin":
         with st.expander("🛠️ Gerir Contas de Utilizadores"):
             tab_criar, tab_gerir = st.tabs(["➕ Criar", "✏️/🗑️ Gerir"])
@@ -221,7 +219,7 @@ with st.sidebar:
                             st.warning("⚠️ Esse utilizador já existe.")
                         else:
                             st.session_state["usuarios_cadastrados"][novo_user.strip()] = nova_pass.strip()
-                            salvar_dados() # <-- GRAVA NA PLANILHA GOOGLE
+                            salvar_dados()
                             st.success(f"✅ Conta '{novo_user}' criada!")
                             st.rerun()
 
@@ -234,7 +232,7 @@ with st.sidebar:
                 with col_a1:
                     if st.button("💾 Atualizar", use_container_width=True) and nova_senha_edit.strip():
                         st.session_state["usuarios_cadastrados"][user_selecionado] = nova_senha_edit.strip()
-                        salvar_dados() # <-- GRAVA NA PLANILHA GOOGLE
+                        salvar_dados()
                         st.success("✅ Atualizada!")
                         st.rerun()
                 with col_a2:
@@ -243,12 +241,25 @@ with st.sidebar:
                             del st.session_state["usuarios_cadastrados"][user_selecionado]
                             if user_selecionado in st.session_state["historicos_por_usuario"]:
                                 del st.session_state["historicos_por_usuario"][user_selecionado]
-                            salvar_dados() # <-- APAGA DA PLANILHA GOOGLE
+                            salvar_dados()
                             st.success("✅ Excluída!")
                             st.rerun()
 
     st.markdown("---")
-    st.subheader("⚙️ Consulta Telegram")
+    st.subheader("⚙️ Obter Relatório")
+    
+    # 📤 ABA / BOTÃO DE UPLOAD DE FICHEIROS RESTAURADO
+    arquivo_enviado = st.file_uploader("📂 Enviar arquivo (.txt)", type=["txt"])
+    if arquivo_enviado is not None:
+        conteudo_up = arquivo_enviado.read().decode('utf-8', errors='ignore')
+        st.session_state["conteudo_ativo"] = conteudo_up
+        st.session_state["origem_ativa"] = f"Upload ({arquivo_enviado.name})"
+        salvar_no_historico(st.session_state["origem_ativa"], conteudo_up)
+        st.success("✅ Arquivo carregado com sucesso!")
+        st.rerun()
+
+    st.markdown("---")
+    st.subheader("🤖 Consulta Telegram")
     uf_selecionada = st.selectbox("Estado", ["SP", "PE", "RJ", "MG", "BA", "CE", "PR", "RS", "SC", "AC", "AL", "AM", "AP", "DF", "ES", "GO", "MA", "MS", "MT", "PA", "PB", "PI", "RN", "RO", "RR", "SE", "TO"])
     numero_oab_raw = st.text_input("Número da OAB:")
     apenas_numeros_oab = re.sub(r'\D', '', numero_oab_raw)
@@ -305,11 +316,10 @@ if menu_escolha == "📜 Histórico de Consultas":
                         st.rerun()
         if st.button("🗑️ Limpar Meu Histórico"):
             st.session_state["historicos_por_usuario"][usuario_atual] = []
-            salvar_dados() # <-- APAGA DA PLANILHA GOOGLE
+            salvar_dados()
             st.rerun()
 
 else:
-    # EXIBIÇÃO DOS DADOS E BLOCOS
     if st.session_state["conteudo_ativo"] and st.session_state["processos_lista"]:
         visiveis = [p for p in st.session_state["processos_lista"] if not p["auto_hidden"]]
         c1, c2, c3 = st.columns(3)
@@ -317,8 +327,14 @@ else:
         c2.metric("Visíveis", len(visiveis))
         c3.metric("Ocultados (Res. 121)", len(st.session_state["processos_lista"]) - len(visiveis))
 
-        busca = st.text_input("🔍 Pesquisar por Nome/CPF/Processo")
-        exibidos = [p for p in visiveis if busca.lower() in p["numero"].lower() or busca.lower() in p["polo_ativo_nome"].lower() or busca.lower() in p["polo_ativo_doc"].lower()] if busca else visiveis
+        busca = st.text_input("🔍 Pesquisar por Nome/CPF/Processo/Advogado")
+        exibidos = [
+            p for p in visiveis 
+            if busca.lower() in p["numero"].lower() 
+            or busca.lower() in p["polo_ativo_nome"].lower() 
+            or busca.lower() in p["polo_ativo_doc"].lower()
+            or busca.lower() in p["advogado"].lower()
+        ] if busca else visiveis
 
         for p in exibidos:
             with st.container(border=True):
@@ -330,6 +346,7 @@ else:
                 with col_valores:
                     st.markdown(f"**⚖️ Classe:** {p['classe']}")
                     st.markdown(f"**💰 Valor:** {p['valor']}")
+                    st.markdown(f"**👨‍⚖️ Advogado:** {p['advogado']}")  # <-- EXIBIÇÃO DOS DADOS DO ADVOGADO
                 with col_copiar:
                     st.caption("📋 **CPF / DOC:**")
                     st.code(p['polo_ativo_doc'], language=None)
@@ -343,4 +360,4 @@ else:
                 with st.expander("🔍 Ver bloco original"):
                     st.text(p['bloco_completo'])
     else:
-        st.info("👈 Utilize o menu lateral para consultar OAB ou enviar arquivo.")
+        st.info("👈 Utilize o menu lateral para enviar um arquivo (.txt) ou consultar via Telegram.")
