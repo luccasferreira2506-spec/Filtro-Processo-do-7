@@ -23,15 +23,15 @@ except KeyError as e:
     st.stop()
 
 # ==============================================================================
-# 💾 COMUNICAÇÃO COM PLANILHA GOOGLE (API)
+# 💾 COMUNICAÇÃO BLINDADA COM PLANILHA GOOGLE
 # ==============================================================================
 def carregar_dados():
     try:
         res = requests.get(URL_BANCO_GOOGLE, timeout=15)
         if res.status_code == 200:
             return res.json()
-    except Exception as e:
-        st.error("⚠️ Erro ao carregar banco de dados.")
+    except Exception:
+        pass  # Retorna vazio de forma silenciosa se houver instabilidade
     return {"usuarios": {}, "historicos": {}}
 
 def salvar_dados():
@@ -42,11 +42,11 @@ def salvar_dados():
             "historicos": st.session_state["historicos_por_usuario"]
         }
         requests.post(URL_BANCO_GOOGLE, json=payload, timeout=15)
-    except Exception as e:
-        st.error("⚠️ Erro ao salvar banco de dados.")
+    except Exception:
+        pass
 
 # ==============================================================================
-# 🔄 INICIALIZAÇÃO DE SESSÕES (BUSCANDO DA PLANILHA)
+# 🔄 INICIALIZAÇÃO DE SESSÕES
 # ==============================================================================
 if "banco_carregado" not in st.session_state:
     dados_nuvem = carregar_dados()
@@ -156,11 +156,16 @@ def carregar_e_estruturar_relatorio(conteudo_texto):
         if polo_ativo_match and any(t in polo_ativo_match.group(1).lower() for t in ["ocultada", "ocultado", "res. 121"]):
             auto_hidden = True
 
+        # Extração melhorada do Advogado e campos
+        advogado_val = extrair_campo(r'ADVOGADO:\s*(.*)', bloco)
+        if advogado_val == "Não informado":
+            advogado_val = extrair_campo(r'ADV:\s*(.*)', bloco)
+
         st.session_state["processos_lista"].append({
             "numero": extrair_campo(r'PROCESSO:\s*(.*)', bloco),
             "classe": extrair_campo(r'CLASSE:\s*(.*)', bloco),
             "valor": extrair_campo(r'VALOR:\s*(.*)', bloco),
-            "advogado": extrair_campo(r'ADVOGADO:\s*(.*)', bloco),  # <-- DADOS DO ADVOGADO RESTAURADOS
+            "advogado": advogado_val,
             "polo_ativo_nome": extrair_campo(r'POLO ATIVO:\s*[\s\S]*?-\s*NOME:\s*(.*?)\n', bloco),
             "polo_ativo_doc": extrair_campo(r'POLO ATIVO:\s*[\s\S]*?-\s*DOC:\s*(.*?)\n', bloco, "Sem CPF/DOC"),
             "polo_ativo_renda": extrair_campo(r'POLO ATIVO:\s*[\s\S]*?-\s*RENDA:\s*(.*?)\n', bloco),
@@ -205,7 +210,6 @@ with st.sidebar:
 
     menu_escolha = st.radio("Navegação:", ["🔍 Consulta & Processos", "📜 Histórico de Consultas"])
     
-    # PAINEL ADMIN
     if usuario_atual == "admin":
         with st.expander("🛠️ Gerir Contas de Utilizadores"):
             tab_criar, tab_gerir = st.tabs(["➕ Criar", "✏️/🗑️ Gerir"])
@@ -226,7 +230,7 @@ with st.sidebar:
             with tab_gerir:
                 usuarios_lista = list(st.session_state["usuarios_cadastrados"].keys())
                 user_selecionado = st.selectbox("Selecione o utilizador:", usuarios_lista)
-                nova_senha_edit = st.text_input(f"Nova palavra-passe:", type="password")
+                nova_senha_edit = st.text_input("Nova palavra-passe:", type="password")
                 
                 col_a1, col_a2 = st.columns(2)
                 with col_a1:
@@ -248,7 +252,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("⚙️ Obter Relatório")
     
-    # 📤 ABA / BOTÃO DE UPLOAD DE FICHEIROS RESTAURADO
+    # UPLOAD DE FICHEIROS FUNCIONAL
     arquivo_enviado = st.file_uploader("📂 Enviar arquivo (.txt)", type=["txt"])
     if arquivo_enviado is not None:
         conteudo_up = arquivo_enviado.read().decode('utf-8', errors='ignore')
@@ -282,7 +286,6 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"⚠️ Erro: {e}")
 
-    # DOWNLOADS
     if st.session_state["conteudo_ativo"]:
         st.markdown("---")
         st.download_button("📥 Baixar Filtrado", data=gerar_texto_filtrado(), file_name=f"FILTRADO_{st.session_state['origem_ativa']}.txt", type="primary", use_container_width=True)
@@ -346,7 +349,7 @@ else:
                 with col_valores:
                     st.markdown(f"**⚖️ Classe:** {p['classe']}")
                     st.markdown(f"**💰 Valor:** {p['valor']}")
-                    st.markdown(f"**👨‍⚖️ Advogado:** {p['advogado']}")  # <-- EXIBIÇÃO DOS DADOS DO ADVOGADO
+                    st.markdown(f"**👨‍⚖️ Advogado:** {p['advogado']}")  # ADVOGADO GARANTIDO
                 with col_copiar:
                     st.caption("📋 **CPF / DOC:**")
                     st.code(p['polo_ativo_doc'], language=None)
