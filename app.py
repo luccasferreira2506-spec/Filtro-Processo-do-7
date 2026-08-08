@@ -14,12 +14,21 @@ st.set_page_config(
     layout="wide"
 )
 
-# Inicializa variáveis de sessão (Session State)
-if "autenticado" not in st.session_state:
-    st.session_state["autenticado"] = False
+# Inicializa variáveis globais de sessão
+if "usuarios_cadastrados" not in st.session_state:
+    senha_admin_padrao = st.secrets.get("SENHA_APP", "123456")
+    st.session_state["usuarios_cadastrados"] = {
+        "admin": senha_admin_padrao
+    }
 
-if "historico_consultas" not in st.session_state:
-    st.session_state["historico_consultas"] = []
+if "usuario_logado" not in st.session_state:
+    st.session_state["usuario_logado"] = None
+
+if "login_tempo" not in st.session_state:
+    st.session_state["login_tempo"] = None
+
+if "historicos_por_usuario" not in st.session_state:
+    st.session_state["historicos_por_usuario"] = {}
 
 if "conteudo_ativo" not in st.session_state:
     st.session_state["conteudo_ativo"] = None
@@ -33,28 +42,45 @@ if "processos_lista" not in st.session_state:
 if "cabecalho_ativo" not in st.session_state:
     st.session_state["cabecalho_ativo"] = ""
 
-# ==============================================================================
-# 🔒 SISTEMA DE PROTEÇÃO POR SENHA (SEGURO VIA SECRETS)
-# ==============================================================================
-if not st.session_state["autenticado"]:
-    st.title("🔒 Acesso Restrito - Painel Supremo do Sete V2.0")
-    st.write("Digite a senha de acesso para liberar o painel.")
+# Controlo de expiração de sessão (1 hora de inatividade)
+if st.session_state["usuario_logado"] and st.session_state["login_tempo"]:
+    tempo_decorrido = (datetime.now() - st.session_state["login_tempo"]).total_seconds()
+    if tempo_decorrido > 3600:
+        st.session_state["usuario_logado"] = None
+        st.session_state["login_tempo"] = None
+        st.warning("⚠️ Sessão expirada após 1 hora de inatividade. Faça login novamente.")
+        st.rerun()
+    else:
+        st.session_state["login_tempo"] = datetime.now()
 
-    senha_digitada = st.text_input("Senha de Acesso:", type="password")
-    
-    if st.button("🔓 Entrar no Sistema", type="primary"):
-        try:
-            senha_correta = st.secrets["SENHA_APP"]
-            if senha_digitada == senha_correta:
-                st.session_state["autenticado"] = True
-                st.success("✅ Acesso concedido!")
+# ==============================================================================
+# 🔒 SISTEMA DE LOGIN E CONTROLE DE CONTAS EXCLUSIVAS
+# ==============================================================================
+if not st.session_state["usuario_logado"]:
+    st.title("🔒 Acesso Restrito - Painel Supremo do Sete V2.0")
+    st.write("Digite suas credenciais de acesso para entrar no sistema.")
+
+    col_l1, col_l2 = st.columns(2)
+    with col_l1:
+        user_input = st.text_input("Utilizador:")
+        pass_input = st.text_input("Palavra-passe:", type="password")
+        
+        if st.button("🔓 Entrar", type="primary", use_container_width=True):
+            usuarios = st.session_state["usuarios_cadastrados"]
+            if user_input in usuarios and usuarios[user_input] == pass_input:
+                st.session_state["usuario_logado"] = user_input
+                st.session_state["login_tempo"] = datetime.now()
+                st.success(f"✅ Bem-vindo(a), {user_input}!")
                 st.rerun()
             else:
-                st.error("❌ Senha incorreta! Tente novamente.")
-        except KeyError:
-            st.error("⚠️ A variável 'SENHA_APP' não foi configurada nos Secrets do Streamlit Cloud.")
-            
+                st.error("❌ Utilizador ou palavra-passe incorretos.")
+    
     st.stop()
+
+usuario_atual = st.session_state["usuario_logado"]
+
+if usuario_atual not in st.session_state["historicos_por_usuario"]:
+    st.session_state["historicos_por_usuario"][usuario_atual] = []
 
 # ==============================================================================
 # ⚙️ CREDENCIAIS SEGURAS DO TELEGRAM
@@ -77,7 +103,6 @@ async def buscar_arquivo_no_grupo(comando_oab):
     client = TelegramClient(session, API_ID, API_HASH)
     
     await client.start()
-
     grupo = await client.get_entity(GRUPO_IDENTIFICADOR)
     mensagem_enviada = await client.send_message(grupo, comando_oab)
     
@@ -97,25 +122,22 @@ async def buscar_arquivo_no_grupo(comando_oab):
     return arquivo_bytes
 
 # ==============================================================================
-# 🧠 FILTRAGEM E TRATAMENTO DOS PROCESSOS
+# 🧠 TRATAMENTO E EXTRAÇÃO RIGOROSA DOS TELEFONES
 # ==============================================================================
 def extrair_campo(padrao, texto, padrao_padrao="Não informado"):
     match = re.search(padrao, texto, re.IGNORECASE)
     return match.group(1).strip() if match else padrao_padrao
 
 def extrair_telefones(bloco):
-    """Extrai os telefones de dentro do bloco do processo."""
     telefones = []
-    # Procura a seção de telefones
     match_tel_bloco = re.search(r'TELEFONES:\s*(.*?)(?=- ADVOGADO:|- NOME:|\Z)', bloco, re.DOTALL)
     if match_tel_bloco:
-        linhas = match_tel_bloco.group(1).split('\n')
-        for linha in linhas:
-            # Pega números que estejam no formato exato ou limpa os caracteres para pegar os dígitos
-            digitos = re.sub(r'\D', '', linha)
-            if len(digitos) >= 8:  # Considera número de telefone válido
-                telefones.append(digitos)
-    return list(set(telefones)) # Remove duplicados
+        texto_tel = match_tel_bloco.group(1)
+        padroes = re.findall(r'\(?(\d{2})\)?\s*(\d{4,5})-?(\d{4})', texto_tel)
+        for ddd, p1, p2 in padroes:
+            num_limpo = f"55{ddd}{p1}{p2}"
+            telefones.append(num_limpo)
+    return list(set(telefones))
 
 def carregar_e_estruturar_relatorio(conteudo_texto):
     pos_primeiro = conteudo_texto.find('PROCESSO:')
@@ -161,7 +183,6 @@ def carregar_e_estruturar_relatorio(conteudo_texto):
 
 def gerar_texto_filtrado():
     cabecalho = st.session_state.get("cabecalho_ativo", "")
-    # Remove automaticamente os processos ocultados/Res. 121 no arquivo filtrado
     blocos = [p["bloco_completo"] for p in st.session_state["processos_lista"] if not p["auto_hidden"]]
     return cabecalho + "".join(blocos)
 
@@ -169,37 +190,53 @@ def salvar_no_historico(origem, conteudo):
     carregar_e_estruturar_relatorio(conteudo)
     total = len(st.session_state["processos_lista"])
     mantidos = sum(1 for p in st.session_state["processos_lista"] if not p["auto_hidden"])
-    removidos = total - mantidos
-
+    
     item = {
         "id": datetime.now().strftime("%Y%m%d_%H%M%S"),
         "data_hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         "origem": origem,
         "total": total,
         "mantidos": mantidos,
-        "removidos": removidos,
         "conteudo_original": conteudo
     }
-    if not st.session_state["historico_consultas"] or st.session_state["historico_consultas"][0]["conteudo_original"] != conteudo:
-        st.session_state["historico_consultas"].insert(0, item)
+    hist_usuario = st.session_state["historicos_por_usuario"][usuario_atual]
+    if not hist_usuario or hist_usuario[0]["conteudo_original"] != conteudo:
+        hist_usuario.insert(0, item)
 
 # ==============================================================================
-# 📂 MENU LATERAL RETRÁTIL (SIDEBAR)
+# 📂 MENU LATERAL RETRÁTIL (SIDEBAR) COM DOWNLOADS À ESQUERDA
 # ==============================================================================
 with st.sidebar:
-    st.title("📂 Painel de Controle")
-    st.write("Gerencie suas consultas e dados por aqui.")
+    st.title("📂 Painel de Controlo")
+    st.write(f"👤 Utilizador: **{usuario_atual}**")
     
+    if st.button("🚪 Terminar Sessão", use_container_width=True):
+        st.session_state["usuario_logado"] = None
+        st.rerun()
+
+    st.markdown("---")
     menu_escolha = st.radio(
         "Navegação:",
         ["🔍 Consulta & Processos", "📜 Histórico de Consultas"]
     )
     
+    # PAINEL EXCLUSIVO PARA O ADMIN CRIAR CONTAS
+    if usuario_atual == "admin":
+        with st.expander("🛠️ Criar Conta para Amigo"):
+            novo_user = st.text_input("Novo Utilizador:")
+            nova_pass = st.text_input("Nova Palavra-passe:", type="password")
+            if st.button("➕ Criar Conta", use_container_width=True):
+                if novo_user.strip() and nova_pass.strip():
+                    st.session_state["usuarios_cadastrados"][novo_user.strip()] = nova_pass.strip()
+                    st.success(f"Conta '{novo_user}' criada com sucesso!")
+                else:
+                    st.warning("Preencha todos os campos.")
+
     st.markdown("---")
-    st.subheader("⚙️ Nova Consulta Telegram")
+    st.subheader("⚙️ Consulta Telegram")
     estados = ["SP", "PE", "RJ", "MG", "BA", "CE", "PR", "RS", "SC", "AC", "AL", "AM", "AP", "DF", "ES", "GO", "MA", "MS", "MT", "PA", "PB", "PI", "RN", "RO", "RR", "SE", "TO"]
     uf_selecionada = st.selectbox("Estado (UF)", estados, index=0)
-    numero_oab_raw = st.text_input("Número da OAB (Apenas dígitos):", placeholder="Ex: 49892")
+    numero_oab_raw = st.text_input("Número da OAB:", placeholder="Ex: 49892")
     apenas_numeros_oab = re.sub(r'\D', '', numero_oab_raw)
 
     if st.button("🚀 Consultar no Telegram", type="primary", use_container_width=True):
@@ -233,18 +270,41 @@ with st.sidebar:
             salvar_no_historico(st.session_state["origem_ativa"], conteudo)
             st.success("✅ Carregado com sucesso!")
 
+    # OPÇÕES DE DOWNLOAD NO LADO ESQUERDO (SIDEBAR)
+    if st.session_state["conteudo_ativo"]:
+        st.markdown("---")
+        st.subheader("📥 Opções de Download")
+        txt_filtrado_atual = gerar_texto_filtrado()
+        
+        st.download_button(
+            label="📥 Baixar Apenas Filtrado",
+            data=txt_filtrado_atual,
+            file_name=f"FILTRADO_{st.session_state['origem_ativa'].replace(' ', '_')}.txt",
+            mime="text/plain",
+            type="primary",
+            use_container_width=True
+        )
+        st.download_button(
+            label="📄 Baixar Sem Filtro (Original)",
+            data=st.session_state["conteudo_ativo"],
+            file_name=f"ORIGINAL_{st.session_state['origem_ativa'].replace(' ', '_')}.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
+
 # ==============================================================================
 # 💻 TELA PRINCIPAL: PAINEL SUPREMO DO SETE V2.0
 # ==============================================================================
 st.title("⚖️ Painel Supremo do Sete V2.0")
 
-# Se a escolha no menu lateral for histórico
 if menu_escolha == "📜 Histórico de Consultas":
-    st.subheader("📜 Histórico de Consultas Realizadas")
-    if not st.session_state["historico_consultas"]:
-        st.info("Nenhuma consulta registrada ainda.")
+    st.subheader(f"📜 Histórico de Consultas de `{usuario_atual}`")
+    hist_usuario = st.session_state["historicos_por_usuario"][usuario_atual]
+    
+    if not hist_usuario:
+        st.info("Nenhuma consulta registrada no seu histórico.")
     else:
-        for idx, item in enumerate(st.session_state["historico_consultas"]):
+        for idx, item in enumerate(hist_usuario):
             with st.container(border=True):
                 col_h1, col_h2, col_h3 = st.columns([3, 2, 1.5])
                 with col_h1:
@@ -259,16 +319,15 @@ if menu_escolha == "📜 Histórico de Consultas":
                         carregar_e_estruturar_relatorio(item["conteudo_original"])
                         st.success("Consulta carregada!")
                         st.rerun()
-        if st.button("🗑️ Limpar Histórico"):
-            st.session_state["historico_consultas"] = []
+        if st.button("🗑️ Limpar Meu Histórico"):
+            st.session_state["historicos_por_usuario"][usuario_atual] = []
             st.rerun()
 
 else:
     # --------------------------------------------------------------------------
-    # ABA PRINCIPAL: IDENTIFICAÇÃO DO ADVOGADO NO TOPO
+    # SECÇÃO DO ADVOGADO COM SETA EXPANSÍVEL / RECOLHÍVEL
     # --------------------------------------------------------------------------
-    st.markdown("### 👤 Identificação do Advogado")
-    with st.container(border=True):
+    with st.expander("👤 **Identificação e Dados do Advogado** (Clique para recolher/expandir)", expanded=True):
         col_adv1, col_adv2, col_adv3, col_adv4 = st.columns(4)
         with col_adv1:
             nome_adv_input = st.text_input("Nome do Advogado:", value="Dr(a). Nome Exemplo")
@@ -279,7 +338,6 @@ else:
         with col_adv4:
             insta_adv_input = st.text_input("Instagram (@usuario):", value="")
 
-        # Renderização dinâmica dos botões com links clicáveis do advogado
         col_btn_w, col_btn_i = st.columns(2)
         with col_btn_w:
             if whats_adv_input.strip():
@@ -296,11 +354,8 @@ else:
 
     st.markdown("---")
 
-    # SE HOUVER RELATÓRIO CARREGADO
     if st.session_state["conteudo_ativo"] and st.session_state["processos_lista"]:
         processos = st.session_state["processos_lista"]
-        
-        # Filtra automaticamente tirando os ocultados da exibição e download padrão
         processos_visiveis = [p for p in processos if not p["auto_hidden"]]
         
         total = len(processos)
@@ -313,29 +368,6 @@ else:
         c1.metric("Total de Processos", total)
         c2.metric("Visíveis", mantidos)
         c3.metric("Ocultados (Res. 121)", removidos)
-
-        # OPÇÕES DE DOWNLOAD SOLICITADAS (APENAS FILTRADO E SEM FILTRO)
-        st.markdown("### 📥 Opções de Download")
-        txt_filtrado_atual = gerar_texto_filtrado()
-        
-        col_dl1, col_dl2 = st.columns(2)
-        with col_dl1:
-            st.download_button(
-                label="📥 Baixar Apenas Filtrado",
-                data=txt_filtrado_atual,
-                file_name=f"FILTRADO_{st.session_state['origem_ativa'].replace(' ', '_')}.txt",
-                mime="text/plain",
-                type="primary",
-                use_container_width=True
-            )
-        with col_dl2:
-            st.download_button(
-                label="📄 Baixar Sem Filtro (Original)",
-                data=st.session_state["conteudo_ativo"],
-                file_name=f"ORIGINAL_{st.session_state['origem_ativa'].replace(' ', '_')}.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
 
         st.markdown("---")
         busca = st.text_input("🔍 Pesquisar por Nome, CPF/CNPJ ou Nº do Processo", "")
@@ -370,14 +402,14 @@ else:
                     st.caption("📋 **CPF / DOC (Copiar):**")
                     st.code(p['polo_ativo_doc'], language=None)
 
-                # BOTÕES DE WHATSAPP PARA OS NÚMEROS LIGADOS AO PROCESSO
+                # BOTÕES DE WHATSAPP PARA OS NÚMEROS DO PROCESSO CORRIGIDOS
                 if p["telefones"]:
                     st.markdown("📞 **Telefones de Contato (Clique para WhatsApp):**")
-                    cols_tel = st.columns(min(len(p["telefones"]), 4)) # Cria colunas dinâmicas para os telefones
+                    cols_tel = st.columns(min(len(p["telefones"]), 4))
                     for idx_tel, tel in enumerate(p["telefones"]):
                         col_atual = cols_tel[idx_tel % len(cols_tel)]
                         with col_atual:
-                            st.link_button(f"💬 {tel}", f"https://wa.me/55{tel}", use_container_width=True)
+                            st.link_button(f"💬 {tel}", f"https://wa.me/{tel}", use_container_width=True)
 
                 with st.expander("🔍 Ver detalhes completos do processo"):
                     st.text(p['bloco_completo'])
