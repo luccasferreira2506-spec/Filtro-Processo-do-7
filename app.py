@@ -225,7 +225,6 @@ with st.sidebar:
         with st.expander("🛠️ Gerir Contas de Utilizadores"):
             tab_criar, tab_gerir = st.tabs(["➕ Criar", "✏️/🗑️ Editar/Excluir"])
             
-            # Aba 1: Criar Conta
             with tab_criar:
                 novo_user = st.text_input("Novo Utilizador:", key="input_novo_user")
                 nova_pass = st.text_input("Nova Palavra-passe:", type="password", key="input_nova_pass")
@@ -240,12 +239,10 @@ with st.sidebar:
                     else:
                         st.warning("Preencha todos os campos.")
 
-            # Aba 2: Editar ou Excluir Conta
             with tab_gerir:
                 usuarios_lista = list(st.session_state["usuarios_cadastrados"].keys())
                 user_selecionado = st.selectbox("Selecione o utilizador:", usuarios_lista, key="select_user_gerir")
                 
-                # Campo para alterar a palavra-passe
                 nova_senha_edit = st.text_input(f"Nova palavra-passe para '{user_selecionado}':", type="password", key="input_edit_pass")
                 
                 col_acao1, col_acao2 = st.columns(2)
@@ -278,7 +275,6 @@ with st.sidebar:
             salvar_no_historico(st.session_state["origem_ativa"], conteudo)
             st.success("✅ Carregado com sucesso!")
 
-    # OPÇÕES DE DOWNLOAD NO LADO ESQUERDO (SIDEBAR)
     if st.session_state["conteudo_ativo"]:
         st.markdown("---")
         st.subheader("📥 Opções de Download")
@@ -333,7 +329,7 @@ if menu_escolha == "📜 Histórico de Consultas":
 
 else:
     # --------------------------------------------------------------------------
-    # SECÇÃO DO ADVOGADO COM SETA EXPANSÍVEL / RECOLHÍVEL (AGORA COM CONSULTA OAB)
+    # SECÇÃO DO ADVOGADO COM SETA EXPANSÍVEL / RECOLHÍVEL (SEM EXEMPLOS E OAB RESTRITA)
     # --------------------------------------------------------------------------
     with st.expander("👤 **Identificação, Dados e Consulta Telegram** (Clique para recolher/expandir)", expanded=True):
         
@@ -342,14 +338,20 @@ else:
         
         with col_uf:
             estados = ["SP", "PE", "RJ", "MG", "BA", "CE", "PR", "RS", "SC", "AC", "AL", "AM", "AP", "DF", "ES", "GO", "MA", "MS", "MT", "PA", "PB", "PI", "RN", "RO", "RR", "SE", "TO"]
-            uf_selecionada = st.selectbox("Estado (UF)", estados, index=0)
+            uf_selecionada = st.selectbox("Estado (UF):", estados, index=0)
             
         with col_oab:
-            numero_oab_raw = st.text_input("Número da OAB:", placeholder="Ex: 49892")
+            numero_oab_raw = st.text_input("Número da OAB:")
+            
+            # Trava visual: avisa se houver letras
+            if numero_oab_raw and not numero_oab_raw.isdigit():
+                st.warning("⚠️ O sistema aceita apenas números. Letras serão ignoradas.")
+            
+            # Trava lógica: apaga qualquer coisa que não seja número
             apenas_numeros_oab = re.sub(r'\D', '', numero_oab_raw)
             
         with col_buscar:
-            st.write("") # Espaçamento para alinhar com os inputs
+            st.write("") # Espaçamento
             st.write("") 
             if st.button("🚀 Consultar OAB no Telegram", type="primary", use_container_width=True):
                 if not apenas_numeros_oab:
@@ -377,11 +379,11 @@ else:
         st.markdown("#### 📱 2. Informações de Contato (Gerador de Links)")
         col_adv1, col_adv3, col_adv4 = st.columns(3)
         with col_adv1:
-            nome_adv_input = st.text_input("Nome do Advogado:", value="Dr(a). Nome Exemplo")
+            nome_adv_input = st.text_input("Nome do Advogado:")
         with col_adv3:
-            whats_adv_input = st.text_input("WhatsApp (Ex: 5581999999999):", value="")
+            whats_adv_input = st.text_input("WhatsApp:")
         with col_adv4:
-            insta_adv_input = st.text_input("Instagram (@usuario):", value="")
+            insta_adv_input = st.text_input("Instagram:")
 
         col_btn_w, col_btn_i = st.columns(2)
         with col_btn_w:
@@ -431,32 +433,4 @@ else:
 
         for p in processos_exibidos:
             with st.container(border=True):
-                col_info, col_valores, col_copiar = st.columns([2.5, 2, 1.5])
-                
-                with col_info:
-                    st.markdown(f"**📌 Processo:** `{p['numero']}`")
-                    st.markdown(f"**👤 Polo Ativo:** {p['polo_ativo_nome']}")
-                    st.markdown(f"**🏢 Polo Passivo:** {p['polo_passivo_nome']}")
-
-                with col_valores:
-                    st.markdown(f"**⚖️ Classe:** {p['classe']}")
-                    st.markdown(f"**💰 Valor:** {p['valor']}")
-                    st.markdown(f"**💵 Renda:** {p['polo_ativo_renda']}")
-
-                with col_copiar:
-                    st.caption("📋 **CPF / DOC (Copiar):**")
-                    st.code(p['polo_ativo_doc'], language=None)
-
-                # BOTÕES DE WHATSAPP PARA OS NÚMEROS DO PROCESSO CORRIGIDOS
-                if p["telefones"]:
-                    st.markdown("📞 **Telefones de Contato (Clique para WhatsApp):**")
-                    cols_tel = st.columns(min(len(p["telefones"]), 4))
-                    for idx_tel, tel in enumerate(p["telefones"]):
-                        col_atual = cols_tel[idx_tel % len(cols_tel)]
-                        with col_atual:
-                            st.link_button(f"💬 {tel}", f"https://wa.me/{tel}", use_container_width=True)
-
-                with st.expander("🔍 Ver detalhes completos do processo"):
-                    st.text(p['bloco_completo'])
-    else:
-        st.info("👈 Utilize a barra de pesquisa acima para realizar uma nova consulta via Telegram ou o menu lateral para carregar um arquivo .txt.")
+                col_info, col_valores, col_copiar = st.colum
