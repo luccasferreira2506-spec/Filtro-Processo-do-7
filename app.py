@@ -431,4 +431,32 @@ else:
 
         for p in processos_exibidos:
             with st.container(border=True):
-                col_info, col_valores, col_copiar =
+                col_info, col_valores, col_copiar = st.columns([2.5, 2, 1.5])
+                
+                with col_info:
+                    st.markdown(f"**📌 Processo:** `{p['numero']}`")
+                    st.markdown(f"**👤 Polo Ativo:** {p['polo_ativo_nome']}")
+                    st.markdown(f"**🏢 Polo Passivo:** {p['polo_passivo_nome']}")
+
+                with col_valores:
+                    st.markdown(f"**⚖️ Classe:** {p['classe']}")
+                    st.markdown(f"**💰 Valor:** {p['valor']}")
+                    st.markdown(f"**💵 Renda:** {p['polo_ativo_renda']}")
+
+                with col_copiar:
+                    st.caption("📋 **CPF / DOC (Copiar):**")
+                    st.code(p['polo_ativo_doc'], language=None)
+
+                # BOTÕES DE WHATSAPP PARA OS NÚMEROS DO PROCESSO CORRIGIDOS
+                if p["telefones"]:
+                    st.markdown("📞 **Telefones de Contato (Clique para WhatsApp):**")
+                    cols_tel = st.columns(min(len(p["telefones"]), 4))
+                    for idx_tel, tel in enumerate(p["telefones"]):
+                        col_atual = cols_tel[idx_tel % len(cols_tel)]
+                        with col_atual:
+                            st.link_button(f"💬 {tel}", f"https://wa.me/{tel}", use_container_width=True)
+
+                with st.expander("🔍 Ver detalhes completos do processo"):
+                    st.text(p['bloco_completo'])
+    else:
+        st.info("👈 Utilize a barra de pesquisa acima para realizar uma nova consulta via Telegram ou o menu lateral para carregar um arquivo .txt.")
