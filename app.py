@@ -9,7 +9,7 @@ from telethon.sessions import StringSession
 # ⚙️ CONFIGURAÇÕES DA PÁGINA
 # ==============================================================================
 st.set_page_config(
-    page_title="Painel Supremo do Sete V2.0", 
+    page_title="Painel Poliana do Sete V2.0 ", 
     page_icon="⚖️", 
     layout="wide"
 )
