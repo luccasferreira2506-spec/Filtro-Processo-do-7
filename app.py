@@ -57,7 +57,7 @@ if st.session_state["usuario_logado"] and st.session_state["login_tempo"]:
 # 🔒 SISTEMA DE LOGIN E CONTROLE DE CONTAS EXCLUSIVAS
 # ==============================================================================
 if not st.session_state["usuario_logado"]:
-    st.title("🔒 Acesso Restrito - Painel Poliana do Sete V2.0")
+    st.title("🔒 Acesso Restrito - Painel Supremo do Sete V2.0")
     st.write("Digite suas credenciais de acesso para entrar no sistema.")
 
     col_l1, col_l2 = st.columns(2)
