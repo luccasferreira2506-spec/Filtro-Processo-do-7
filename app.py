@@ -105,7 +105,6 @@ async def buscar_arquivo_no_grupo(comando_oab, identificador_busca):
     await client.start()
     grupo = await client.get_entity(GRUPO_IDENTIFICADOR)
     
-    # Envia o comando
     mensagem_enviada = await client.send_message(grupo, comando_oab)
     
     arquivo_bytes = None
@@ -114,24 +113,14 @@ async def buscar_arquivo_no_grupo(comando_oab, identificador_busca):
         async for message in client.iter_messages(grupo, limit=15): 
             sender_name = getattr(message.sender, 'username', '') if message.sender else ''
             
-            # Verifica se quem mandou foi o bot
             if sender_name == BOT_USERNAME or BOT_USERNAME in str(message.sender_id):
-                
-                # Só olha para arquivos enviados DEPOIS do nosso comando
                 if message.file and message.id > mensagem_enviada.id:
-                    
-                    # TRAVA 1: É uma resposta direta à mensagem?
                     eh_resposta_direta = (message.reply_to_msg_id == mensagem_enviada.id)
-                    
-                    # TRAVA 2: O número está no texto/legenda da mensagem?
                     texto_mensagem = str(message.text).lower() if message.text else ""
                     tem_oab_no_texto = (identificador_busca.lower() in texto_mensagem)
-                    
-                    # TRAVA 3: O número está no NOME do arquivo?
                     nome_arquivo = str(message.file.name).lower() if hasattr(message.file, 'name') and message.file.name else ""
                     tem_oab_no_arquivo = (identificador_busca.lower() in nome_arquivo)
                     
-                    # Se bater em QUALQUER uma das 3 travas, achamos o arquivo certo!
                     if eh_resposta_direta or tem_oab_no_texto or tem_oab_no_arquivo:
                         arquivo_bytes = await client.download_media(message.file, file=bytes)
                         break
@@ -241,7 +230,6 @@ with st.sidebar:
         ["🔍 Consulta & Processos", "📜 Histórico de Consultas"]
     )
     
-    # PAINEL EXCLUSIVO PARA O ADMIN GERIR CONTAS
     if usuario_atual == "admin":
         with st.expander("🛠️ Gerir Contas de Utilizadores"):
             tab_criar, tab_gerir = st.tabs(["➕ Criar", "✏️/🗑️ Editar/Excluir"])
@@ -263,20 +251,17 @@ with st.sidebar:
             with tab_gerir:
                 usuarios_lista = list(st.session_state["usuarios_cadastrados"].keys())
                 user_selecionado = st.selectbox("Selecione o utilizador:", usuarios_lista, key="select_user_gerir")
-                
                 nova_senha_edit = st.text_input(f"Nova palavra-passe para '{user_selecionado}':", type="password", key="input_edit_pass")
                 
                 col_acao1, col_acao2 = st.columns(2)
-                
                 with col_acao1:
                     if st.button("💾 Atualizar", use_container_width=True):
                         if nova_senha_edit.strip():
                             st.session_state["usuarios_cadastrados"][user_selecionado] = nova_senha_edit.strip()
-                            st.success(f"✅ Palavra-passe atualizada!")
+                            st.success("✅ Palavra-passe atualizada!")
                             st.rerun()
                         else:
                             st.warning("Digite a nova palavra-passe.")
-                
                 with col_acao2:
                     if user_selecionado == "admin":
                         st.caption("🔒 O admin não pode ser excluído.")
@@ -349,12 +334,7 @@ if menu_escolha == "📜 Histórico de Consultas":
             st.rerun()
 
 else:
-    # --------------------------------------------------------------------------
-    # SECÇÃO ÚNICA: CONSULTA TELEGRAM E INFORMAÇÕES DE CONTATO INTEGRADOS
-    # --------------------------------------------------------------------------
     with st.expander("👤 **Consulta Telegram e Dados do Advogado**", expanded=True):
-        
-        # LINHA 1: Buscador do Telegram
         col_uf, col_oab, col_buscar = st.columns([1, 2, 2])
         
         with col_uf:
@@ -363,10 +343,8 @@ else:
             
         with col_oab:
             numero_oab_raw = st.text_input("Número da OAB:")
-            
             if numero_oab_raw and not numero_oab_raw.isdigit():
                 st.warning("⚠️ O sistema aceita apenas números. Letras serão ignoradas.")
-            
             apenas_numeros_oab = re.sub(r'\D', '', numero_oab_raw)
             
         with col_buscar:
@@ -381,11 +359,9 @@ else:
                         try:
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
-                            
                             bytes_recebidos = loop.run_until_complete(
                                 buscar_arquivo_no_grupo(comando_formatado, apenas_numeros_oab)
                             )
-                            
                             if bytes_recebidos:
                                 conteudo = bytes_recebidos.decode('utf-8', errors='ignore')
                                 st.session_state["conteudo_ativo"] = conteudo
@@ -400,25 +376,20 @@ else:
 
         st.markdown("---")
         
-        # LINHA 2: Dados de Contato e Botões Lado a Lado
         col_nome, col_whats, col_btn_w, col_insta, col_btn_i = st.columns([2, 1.5, 1.5, 1.5, 1.5])
         
         with col_nome:
             nome_adv_input = st.text_input("Nome do Advogado:")
-            
         with col_whats:
             whats_adv_input = st.text_input("WhatsApp:")
-            
         with col_btn_w:
             st.write("") 
             st.write("") 
             if whats_adv_input.strip():
                 limpa_whats = re.sub(r'\D', '', whats_adv_input)
                 st.link_button(f"💬 Abrir WhatsApp", f"https://wa.me/{limpa_whats}", use_container_width=True)
-                
         with col_insta:
             insta_adv_input = st.text_input("Instagram:")
-            
         with col_btn_i:
             st.write("") 
             st.write("") 
@@ -428,9 +399,6 @@ else:
 
     st.markdown("---")
 
-    # --------------------------------------------------------------------------
-    # EXIBIÇÃO DOS RESULTADOS / PROCESSOS
-    # --------------------------------------------------------------------------
     if st.session_state["conteudo_ativo"] and st.session_state["processos_lista"]:
         processos = st.session_state["processos_lista"]
         processos_visiveis = [p for p in processos if not p["auto_hidden"]]
@@ -480,12 +448,13 @@ else:
                     st.code(p['polo_ativo_doc'], language=None)
 
                 if p["telefones"]:
-                    st.markdown("📞 **Telefones de Contato (Clique para WhatsApp):**")
-                    cols_tel = st.columns(min(len(p["telefones"]), 4))
-                    for idx_tel, tel in enumerate(p["telefones"]):
-                        col_atual = cols_tel[idx_tel % len(cols_tel)]
-                        with col_atual:
-                            st.link_button(f"💬 {tel}", f"https://wa.me/{tel}", use_container_width=True)
+                    st.markdown("📞 **Telefones de Contato (WhatsApp ou Copiar):**")
+                    for tel in p["telefones"]:
+                        col_w, col_c = st.columns([2, 1])
+                        with col_w:
+                            st.link_button(f"💬 WhatsApp: {tel}", f"https://wa.me/{tel}", use_container_width=True)
+                        with col_c:
+                            st.code(tel, language=None)
 
                 with st.expander("🔍 Ver detalhes completos do processo"):
                     st.text(p['bloco_completo'])
