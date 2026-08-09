@@ -16,7 +16,7 @@ st.set_page_config(
 
 # Inicializa variáveis globais de sessão
 if "usuarios_cadastrados" not in st.session_state:
-    senha_admin_padrao = st.secrets.get("SENHA_APP", "123456")
+    senha_admin_padrao = st.secrets.get("SENHA_APP")
     st.session_state["usuarios_cadastrados"] = {
         "admin": senha_admin_padrao
     }
