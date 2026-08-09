@@ -9,14 +9,14 @@ from telethon.sessions import StringSession
 # ⚙️ CONFIGURAÇÕES DA PÁGINA
 # ==============================================================================
 st.set_page_config(
-    page_title="Painel Supremo do Sete V2.0 ", 
+    page_title="Painel Supremo do Sete V2.0", 
     page_icon="⚖️", 
     layout="wide"
 )
 
 # Inicializa variáveis globais de sessão
 if "usuarios_cadastrados" not in st.session_state:
-    senha_admin_padrao = st.secrets.get("SENHA_APP")
+    senha_admin_padrao = st.secrets.get("SENHA_APP", "123456")
     st.session_state["usuarios_cadastrados"] = {
         "admin": senha_admin_padrao
     }
@@ -269,34 +269,6 @@ with st.sidebar:
                             st.rerun()
 
     st.markdown("---")
-    st.subheader("⚙️ Consulta Telegram")
-    estados = ["SP", "PE", "RJ", "MG", "BA", "CE", "PR", "RS", "SC", "AC", "AL", "AM", "AP", "DF", "ES", "GO", "MA", "MS", "MT", "PA", "PB", "PI", "RN", "RO", "RR", "SE", "TO"]
-    uf_selecionada = st.selectbox("Estado (UF)", estados, index=0)
-    numero_oab_raw = st.text_input("Número da OAB:", placeholder="Ex: 49892")
-    apenas_numeros_oab = re.sub(r'\D', '', numero_oab_raw)
-
-    if st.button("🚀 Consultar no Telegram", type="primary", use_container_width=True):
-        if not apenas_numeros_oab:
-            st.warning("⚠️ Digite um número de OAB válido.")
-        else:
-            comando_formatado = f"/oab {uf_selecionada.lower()}{apenas_numeros_oab}"
-            with st.spinner("Buscando no Telegram..."):
-                try:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    bytes_recebidos = loop.run_until_complete(buscar_arquivo_no_grupo(comando_formatado))
-                    if bytes_recebidos:
-                        conteudo = bytes_recebidos.decode('utf-8', errors='ignore')
-                        st.session_state["conteudo_ativo"] = conteudo
-                        st.session_state["origem_ativa"] = f"Telegram ({uf_selecionada.upper()}{apenas_numeros_oab})"
-                        salvar_no_historico(st.session_state["origem_ativa"], conteudo)
-                        st.success("✅ Relatório carregado!")
-                        st.rerun()
-                    else:
-                        st.error("❌ O Bot não respondeu a tempo.")
-                except Exception as e:
-                    st.error(f"⚠️ Erro: {e}")
-
     with st.expander("📂 Upload Manual (.txt)"):
         arquivo_manual = st.file_uploader("Arquivo local", type=["txt"])
         if arquivo_manual is not None:
@@ -361,14 +333,51 @@ if menu_escolha == "📜 Histórico de Consultas":
 
 else:
     # --------------------------------------------------------------------------
-    # SECÇÃO DO ADVOGADO COM SETA EXPANSÍVEL / RECOLHÍVEL
+    # SECÇÃO DO ADVOGADO COM SETA EXPANSÍVEL / RECOLHÍVEL (AGORA COM CONSULTA OAB)
     # --------------------------------------------------------------------------
-    with st.expander("👤 **Identificação e Dados do Advogado** (Clique para recolher/expandir)", expanded=True):
-        col_adv1, col_adv2, col_adv3, col_adv4 = st.columns(4)
+    with st.expander("👤 **Identificação, Dados e Consulta Telegram** (Clique para recolher/expandir)", expanded=True):
+        
+        st.markdown("#### 🔍 1. Buscar Relatório (Bot Telegram)")
+        col_uf, col_oab, col_buscar = st.columns([1, 2, 2])
+        
+        with col_uf:
+            estados = ["SP", "PE", "RJ", "MG", "BA", "CE", "PR", "RS", "SC", "AC", "AL", "AM", "AP", "DF", "ES", "GO", "MA", "MS", "MT", "PA", "PB", "PI", "RN", "RO", "RR", "SE", "TO"]
+            uf_selecionada = st.selectbox("Estado (UF)", estados, index=0)
+            
+        with col_oab:
+            numero_oab_raw = st.text_input("Número da OAB:", placeholder="Ex: 49892")
+            apenas_numeros_oab = re.sub(r'\D', '', numero_oab_raw)
+            
+        with col_buscar:
+            st.write("") # Espaçamento para alinhar com os inputs
+            st.write("") 
+            if st.button("🚀 Consultar OAB no Telegram", type="primary", use_container_width=True):
+                if not apenas_numeros_oab:
+                    st.warning("⚠️ Digite um número de OAB válido.")
+                else:
+                    comando_formatado = f"/oab {uf_selecionada.lower()}{apenas_numeros_oab}"
+                    with st.spinner("Buscando no Telegram..."):
+                        try:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            bytes_recebidos = loop.run_until_complete(buscar_arquivo_no_grupo(comando_formatado))
+                            if bytes_recebidos:
+                                conteudo = bytes_recebidos.decode('utf-8', errors='ignore')
+                                st.session_state["conteudo_ativo"] = conteudo
+                                st.session_state["origem_ativa"] = f"Telegram ({uf_selecionada.upper()}{apenas_numeros_oab})"
+                                salvar_no_historico(st.session_state["origem_ativa"], conteudo)
+                                st.success("✅ Relatório carregado!")
+                                st.rerun()
+                            else:
+                                st.error("❌ O Bot não respondeu a tempo.")
+                        except Exception as e:
+                            st.error(f"⚠️ Erro: {e}")
+
+        st.markdown("---")
+        st.markdown("#### 📱 2. Informações de Contato (Gerador de Links)")
+        col_adv1, col_adv3, col_adv4 = st.columns(3)
         with col_adv1:
             nome_adv_input = st.text_input("Nome do Advogado:", value="Dr(a). Nome Exemplo")
-        with col_adv2:
-            oab_adv_input = st.text_input("OAB:", value="SP000000")
         with col_adv3:
             whats_adv_input = st.text_input("WhatsApp (Ex: 5581999999999):", value="")
         with col_adv4:
@@ -422,32 +431,4 @@ else:
 
         for p in processos_exibidos:
             with st.container(border=True):
-                col_info, col_valores, col_copiar = st.columns([2.5, 2, 1.5])
-                
-                with col_info:
-                    st.markdown(f"**📌 Processo:** `{p['numero']}`")
-                    st.markdown(f"**👤 Polo Ativo:** {p['polo_ativo_nome']}")
-                    st.markdown(f"**🏢 Polo Passivo:** {p['polo_passivo_nome']}")
-
-                with col_valores:
-                    st.markdown(f"**⚖️ Classe:** {p['classe']}")
-                    st.markdown(f"**💰 Valor:** {p['valor']}")
-                    st.markdown(f"**💵 Renda:** {p['polo_ativo_renda']}")
-
-                with col_copiar:
-                    st.caption("📋 **CPF / DOC (Copiar):**")
-                    st.code(p['polo_ativo_doc'], language=None)
-
-                # BOTÕES DE WHATSAPP PARA OS NÚMEROS DO PROCESSO CORRIGIDOS
-                if p["telefones"]:
-                    st.markdown("📞 **Telefones de Contato (Clique para WhatsApp):**")
-                    cols_tel = st.columns(min(len(p["telefones"]), 4))
-                    for idx_tel, tel in enumerate(p["telefones"]):
-                        col_atual = cols_tel[idx_tel % len(cols_tel)]
-                        with col_atual:
-                            st.link_button(f"💬 {tel}", f"https://wa.me/{tel}", use_container_width=True)
-
-                with st.expander("🔍 Ver detalhes completos do processo"):
-                    st.text(p['bloco_completo'])
-    else:
-        st.info("👈 Utilize o menu lateral esquerdo para realizar uma nova consulta via Telegram ou carregar um arquivo .txt local.")
+                col_info, col_valores, col_copiar =
