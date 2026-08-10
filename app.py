@@ -279,29 +279,76 @@ elif menu_escolha == "🛠️ Administração":
                         st.success(f"✅ Conta '{user_selecionado}' excluída!")
                         st.rerun()
 
-else:  # 🔍 Processos (consulta + upload)
+else:  # 🔍 Processos
     st.title("⚖️ Painel Supremo do Sete V2.0")
-    
-    # Guias para tipo de entrada de dados
-    tab_telegram, tab_upload = st.tabs(["📡 Consultar Telegram", "📂 Upload Manual (.txt)"])
-    
-    # -------------------------------------------------------------------------
-    # ABA TELEGRAM
-    # -------------------------------------------------------------------------
-    with tab_telegram:
+
+    # ==========================================================================
+    # SEÇÃO UNIFICADA: UPLOAD MANUAL + CONSULTA TELEGRAM
+    # ==========================================================================
+    with st.expander("📤 Upload de Arquivo .txt", expanded=True, icon="📂"):
         with st.container(border=True):
-            st.subheader("👤 Consultar OAB e Dados do Advogado")
+            st.markdown("### 📂 Carregar relatório a partir de arquivo")
+            arquivo_manual = st.file_uploader(
+                "Selecione o arquivo .txt com o relatório de processos",
+                type=["txt"],
+                key="upload_file"
+            )
+            if arquivo_manual is not None:
+                conteudo = arquivo_manual.read().decode('utf-8', errors='ignore')
+                if st.button("📥 Processar Arquivo", type="primary", use_container_width=True):
+                    st.session_state["conteudo_ativo"] = conteudo
+                    st.session_state["origem_ativa"] = f"Upload ({arquivo_manual.name})"
+                    salvar_no_historico(st.session_state["origem_ativa"], conteudo)
+                    st.success("✅ Relatório carregado e processado com sucesso!")
+                    st.rerun()
+
+    with st.expander("📡 Consultar OAB via Telegram", expanded=False, icon="🤖"):
+        with st.container(border=True):
+            st.markdown("### 👤 Dados do Advogado e Consulta Telegram")
+            
+            # Campos de identificação do advogado
+            col_nome, col_whats, col_insta = st.columns(3)
+            with col_nome:
+                nome_adv_input = st.text_input("Nome do Advogado:", key="nome_adv_telegram")
+            with col_whats:
+                whats_adv_input = st.text_input("WhatsApp:", key="whats_telegram")
+                if whats_adv_input.strip():
+                    limpa_whats = re.sub(r'\D', '', whats_adv_input)
+                    st.link_button(
+                        "💬 Abrir WhatsApp",
+                        f"https://wa.me/{limpa_whats}",
+                        use_container_width=True
+                    )
+                else:
+                    st.button("💬 WhatsApp", disabled=True, use_container_width=True, key="dummy_w1")
+            with col_insta:
+                insta_adv_input = st.text_input("Instagram:", key="insta_telegram")
+                if insta_adv_input.strip():
+                    limpa_insta = insta_adv_input.strip().replace("@", "")
+                    st.link_button(
+                        "📸 Abrir Instagram",
+                        f"https://instagram.com/{limpa_insta}",
+                        use_container_width=True
+                    )
+                else:
+                    st.button("📸 Instagram", disabled=True, use_container_width=True, key="dummy_i1")
+            
+            st.markdown("---")
+            st.markdown("#### 🔍 Consultar OAB")
+            
+            # Campos de consulta OAB
             col_uf, col_oab, col_buscar = st.columns([1, 2, 2])
             with col_uf:
-                estados = ["SP", "PE", "RJ", "MG", "BA", "CE", "PR", "RS", "SC",
-                           "AC", "AL", "AM", "AP", "DF", "ES", "GO", "MA", "MS",
-                           "MT", "PA", "PB", "PI", "RN", "RO", "RR", "SE", "TO"]
+                estados = [
+                    "SP", "PE", "RJ", "MG", "BA", "CE", "PR", "RS", "SC",
+                    "AC", "AL", "AM", "AP", "DF", "ES", "GO", "MA", "MS",
+                    "MT", "PA", "PB", "PI", "RN", "RO", "RR", "SE", "TO"
+                ]
                 uf_selecionada = st.selectbox("Estado (UF):", estados, index=0)
             with col_oab:
                 numero_oab_raw = st.text_input("Número da OAB (apenas números):")
                 apenas_numeros_oab = re.sub(r'\D', '', numero_oab_raw)
             with col_buscar:
-                # alinhamento visual
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🚀 Consultar OAB no Telegram", type="primary", use_container_width=True):
                     if len(apenas_numeros_oab) != 5:
@@ -326,59 +373,95 @@ else:  # 🔍 Processos (consulta + upload)
                                     st.error("❌ O Bot não respondeu a tempo ou o arquivo não foi identificado.")
                             except Exception as e:
                                 st.error(f"⚠️ Erro: {e}")
-            st.markdown("---")
-            # Dados do advogado e links rápidos (sempre visíveis)
-            col_nome, col_whats, col_btn_w, col_insta, col_btn_i = st.columns([2, 1.5, 1.5, 1.5, 1.5])
-            with col_nome:
-                nome_adv_input = st.text_input("Nome do Advogado:", key="nome_adv_telegram")
-            with col_whats:
-                whats_adv_input = st.text_input("WhatsApp:", key="whats_telegram")
-            with col_btn_w:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if whats_adv_input.strip():
-                    limpa_whats = re.sub(r'\D', '', whats_adv_input)
-                    st.link_button("💬 Abrir WhatsApp", f"https://wa.me/{limpa_whats}", use_container_width=True)
-                else:
-                    st.button("💬 WhatsApp", disabled=True, use_container_width=True, key="dummy_w1")
-            with col_insta:
-                insta_adv_input = st.text_input("Instagram:", key="insta_telegram")
-            with col_btn_i:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if insta_adv_input.strip():
-                    limpa_insta = insta_adv_input.strip().replace("@", "")
-                    st.link_button("📸 Abrir Instagram", f"https://instagram.com/{limpa_insta}", use_container_width=True)
-                else:
-                    st.button("📸 Instagram", disabled=True, use_container_width=True, key="dummy_i1")
 
-    # -------------------------------------------------------------------------
-    # ABA UPLOAD MANUAL
-    # -------------------------------------------------------------------------
-    with tab_upload:
-        with st.container(border=True):
-            st.subheader("📂 Carregar relatório a partir de arquivo .txt")
-            arquivo_manual = st.file_uploader("Selecione o arquivo", type=["txt"], key="upload_file")
-            if arquivo_manual is not None:
-                conteudo = arquivo_manual.read().decode('utf-8', errors='ignore')
-                if st.button("📥 Processar Arquivo", type="primary", use_container_width=True):
-                    st.session_state["conteudo_ativo"] = conteudo
-                    st.session_state["origem_ativa"] = f"Upload ({arquivo_manual.name})"
-                    salvar_no_historico(st.session_state["origem_ativa"], conteudo)
-                    st.success("✅ Carregado com sucesso!")
-                    st.rerun()
-
-    # -------------------------------------------------------------------------
-    # SEÇÃO DO RELATÓRIO ATIVO (com download consolidado)
-    # -------------------------------------------------------------------------
+    # ==========================================================================
+    # SEÇÃO DO RELATÓRIO ATIVO
+    # ==========================================================================
     if st.session_state["conteudo_ativo"] and st.session_state["processos_lista"]:
         st.markdown("---")
         st.subheader(f"📊 Relatório Ativo: `{st.session_state['origem_ativa']}`")
-        
+
         processos = st.session_state["processos_lista"]
         processos_visiveis = [p for p in processos if not p["auto_hidden"]]
         total = len(processos)
         mantidos = len(processos_visiveis)
         removidos = total - mantidos
 
+        # Métricas
         col_metrica1, col_metrica2, col_metrica3 = st.columns(3)
         col_metrica1.metric("Total de Processos", total)
         col_metrica2.metric("Visíveis", mantidos)
+        col_metrica3.metric("Ocultados (Res. 121)", removidos)
+
+        # Busca
+        with st.container(border=True):
+            st.markdown("#### 🔍 Filtrar Processos")
+            busca = st.text_input(
+                "Pesquisar por Nome, CPF/CNPJ ou Nº do Processo",
+                placeholder="Digite aqui para filtrar...",
+                key="busca_processos"
+            )
+            if busca:
+                processos_exibidos = [
+                    p for p in processos_visiveis
+                    if busca.lower() in p["numero"].lower()
+                    or busca.lower() in p["polo_ativo_nome"].lower()
+                    or busca.lower() in p["polo_ativo_doc"].lower()
+                ]
+            else:
+                processos_exibidos = processos_visiveis
+
+        st.markdown(f"#### 📋 Exibindo {len(processos_exibidos)} de {mantidos} processos visíveis")
+
+        # Lista de processos
+        if processos_exibidos:
+            for p in processos_exibidos:
+                with st.container(border=True):
+                    col_info, col_valores, col_copiar = st.columns([2.5, 2, 1.5])
+                    with col_info:
+                        st.markdown(f"**📌 Processo:** `{p['numero']}`")
+                        st.markdown(f"**⚖️ Tribunal:** {p['tribunal']} | **📋 Classe:** {p['classe']}")
+                        st.markdown(f"**👤 Polo Ativo:** {p['polo_ativo_nome']} ({p['polo_ativo_doc']})")
+                        st.markdown(f"**🏛️ Polo Passivo:** {p['polo_passivo_nome']}")
+                    with col_valores:
+                        st.write(f"💰 **Valor:** {p['valor']}")
+                        if p['telefones']:
+                            st.write("📞 **Telefones:**")
+                            for tel in p['telefones']:
+                                st.code(tel, language=None)
+                        else:
+                            st.write("📞 **Telefones:** Nenhum")
+                        if p['polo_ativo_renda']:
+                            st.write(f"💵 **Renda:** {p['polo_ativo_renda']}")
+                    with col_copiar:
+                        if st.button("📋 Copiar Bloco", key=f"copy_{p['id']}", use_container_width=True):
+                            st.code(p['bloco_completo'], language=None)
+        else:
+            st.warning("🔍 Nenhum processo encontrado com os critérios de busca.")
+
+        # Exportação consolidada
+        st.markdown("---")
+        with st.container(border=True):
+            st.markdown("### 📥 Exportar Relatório")
+            col_download1, col_download2 = st.columns(2)
+            with col_download1:
+                txt_filtrado = gerar_texto_filtrado()
+                st.download_button(
+                    label="📥 Baixar Apenas Filtrado (Res. 121 ocultados)",
+                    data=txt_filtrado,
+                    file_name=f"FILTRADO_{st.session_state['origem_ativa'].replace(' ', '_')}.txt",
+                    mime="text/plain",
+                    type="primary",
+                    use_container_width=True
+                )
+            with col_download2:
+                st.download_button(
+                    label="📄 Baixar Relatório Original Completo",
+                    data=st.session_state["conteudo_ativo"],
+                    file_name=f"ORIGINAL_{st.session_state['origem_ativa'].replace(' ', '_')}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+
+    elif not st.session_state["conteudo_ativo"]:
+        st.info("👆 Utilize as seções acima para carregar um relatório de processos.")
