@@ -1,11 +1,26 @@
-# Credenciais e Segredos do Streamlit
-secrets.toml
+# Secrets e credenciais
 .streamlit/secrets.toml
+*.secret
+*.key
+.env
 
-# Banco de dados local SQLite
-banco.db
-*.db
+# Dados dos usuários (contém senhas!)
+dados/
+*.json
 
-# Cache e arquivos temporários do Python
+# Arquivos Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+*.log
+
+# IDE
+.vscode/
+.idea/
