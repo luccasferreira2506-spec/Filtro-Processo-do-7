@@ -476,34 +476,35 @@ if pagina == "🔍 Processos":
                         st.write(f"**Documento:** {p['doc_passivo']}")
                     
                     with col_contatos:
-                        # Telefones com botão copiar e WhatsApp
+                        # Telefones RETRÁTEIS com botões na mesma linha
                         st.markdown("#### 📞 Telefones")
                         if p["telefones"]:
-                            for tel in p["telefones"]:
-                                # Formatar telefone
-                                if len(tel) >= 12:
-                                    ddd = tel[2:4]
-                                    num = tel[4:]
-                                    if len(num) == 9:
-                                        tel_formatado = f"({ddd}) {num[:5]}-{num[5:]}"
+                            with st.expander(f"📞 {len(p['telefones'])} telefone(s)", expanded=False):
+                                for tel in p["telefones"]:
+                                    # Formatar telefone
+                                    if len(tel) >= 12:
+                                        ddd = tel[2:4]
+                                        num = tel[4:]
+                                        if len(num) == 9:
+                                            tel_formatado = f"({ddd}) {num[:5]}-{num[5:]}"
+                                        else:
+                                            tel_formatado = f"({ddd}) {num[:4]}-{num[4:]}"
                                     else:
-                                        tel_formatado = f"({ddd}) {num[:4]}-{num[4:]}"
-                                else:
-                                    tel_formatado = tel
-                                
-                                col_tel, col_copy, col_whats = st.columns([2, 1, 1])
-                                with col_tel:
-                                    st.code(tel_formatado)
-                                with col_copy:
-                                    if st.button("📋", key=f"copy_{p['id']}_{tel}", help="Copiar número"):
-                                        st.toast("✅ Número copiado!")
-                                        st.code(tel)
-                                with col_whats:
-                                    st.link_button("💬", f"https://wa.me/{tel}", key=f"whats_{p['id']}_{tel}")
+                                        tel_formatado = tel
+                                    
+                                    # Número e botões na mesma linha
+                                    col_num, col_copy, col_whats = st.columns([3, 1, 1])
+                                    with col_num:
+                                        st.code(tel_formatado, language=None)
+                                    with col_copy:
+                                        if st.button("📋", key=f"copy_{p['id']}_{tel}", help="Copiar número"):
+                                            st.toast("✅ Copiado!")
+                                    with col_whats:
+                                        st.link_button("💬", f"https://wa.me/{tel}", key=f"whats_{p['id']}_{tel}")
                         else:
-                            st.info("Nenhum telefone encontrado")
+                            st.info("Nenhum telefone")
                         
-                        # Advogados separados por polo
+                        # Advogados separados por polo ATIVO e PASSIVO
                         st.markdown("#### 👨‍⚖️ Advogados")
                         
                         # Separar por polo
@@ -511,43 +512,50 @@ if pagina == "🔍 Processos":
                         adv_passivos = [a for a in p["advogados"] if a.get("polo") == "PASSIVO"]
                         adv_outros = [a for a in p["advogados"] if a.get("polo") not in ["ATIVO", "PASSIVO"]]
                         
+                        # Advogados do Polo ATIVO
                         if adv_ativos:
-                            st.markdown("**Polo Ativo:**")
-                            for adv in adv_ativos:
-                                with st.container(border=True):
-                                    st.write(f"👤 {adv['nome']}")
-                                    st.caption(f"OAB: {adv['oab']} | Email: {adv['email']}")
-                                    if adv["whatsapp"]:
-                                        col_a1, col_a2 = st.columns([3, 1])
-                                        with col_a1:
-                                            st.code(adv["telefone"])
-                                        with col_a2:
-                                            st.link_button("💬", f"https://wa.me/{adv['whatsapp']}", key=f"adv_at_{p['id']}_{adv['nome']}")
+                            with st.expander(f"👨‍⚖️ Polo ATIVO ({len(adv_ativos)})", expanded=False):
+                                for adv in adv_ativos:
+                                    with st.container(border=True):
+                                        st.write(f"**{adv['nome']}**")
+                                        st.caption(f"OAB: {adv['oab']} | Email: {adv['email']}")
+                                        if adv["whatsapp"]:
+                                            col_tel, col_btn = st.columns([4, 1])
+                                            with col_tel:
+                                                st.code(adv["telefone"], language=None)
+                                            with col_btn:
+                                                st.link_button("💬", f"https://wa.me/{adv['whatsapp']}", key=f"adv_at_{p['id']}_{adv['nome']}")
                         
+                        # Advogados do Polo PASSIVO
                         if adv_passivos:
-                            st.markdown("**Polo Passivo:**")
-                            for adv in adv_passivos:
-                                with st.container(border=True):
-                                    st.write(f"👤 {adv['nome']}")
-                                    st.caption(f"OAB: {adv['oab']} | Email: {adv['email']}")
-                                    if adv["whatsapp"]:
-                                        col_a1, col_a2 = st.columns([3, 1])
-                                        with col_a1:
-                                            st.code(adv["telefone"])
-                                        with col_a2:
-                                            st.link_button("💬", f"https://wa.me/{adv['whatsapp']}", key=f"adv_pass_{p['id']}_{adv['nome']}")
+                            with st.expander(f"👨‍⚖️ Polo PASSIVO ({len(adv_passivos)})", expanded=False):
+                                for adv in adv_passivos:
+                                    with st.container(border=True):
+                                        st.write(f"**{adv['nome']}**")
+                                        st.caption(f"OAB: {adv['oab']} | Email: {adv['email']}")
+                                        if adv["whatsapp"]:
+                                            col_tel, col_btn = st.columns([4, 1])
+                                            with col_tel:
+                                                st.code(adv["telefone"], language=None)
+                                            with col_btn:
+                                                st.link_button("💬", f"https://wa.me/{adv['whatsapp']}", key=f"adv_pass_{p['id']}_{adv['nome']}")
                         
+                        # Outros advogados (se não identificou polo)
                         if adv_outros:
-                            st.markdown("**Outros:**")
-                            for adv in adv_outros:
-                                with st.container(border=True):
-                                    st.write(f"👤 {adv['nome']}")
-                                    st.caption(f"OAB: {adv['oab']}")
-                                    if adv["whatsapp"]:
-                                        st.link_button("💬 WhatsApp", f"https://wa.me/{adv['whatsapp']}", key=f"adv_out_{p['id']}_{adv['nome']}")
+                            with st.expander(f"👨‍⚖️ Outros ({len(adv_outros)})", expanded=False):
+                                for adv in adv_outros:
+                                    with st.container(border=True):
+                                        st.write(f"**{adv['nome']}**")
+                                        st.caption(f"OAB: {adv['oab']} | Email: {adv['email']}")
+                                        if adv["whatsapp"]:
+                                            col_tel, col_btn = st.columns([4, 1])
+                                            with col_tel:
+                                                st.code(adv["telefone"], language=None)
+                                            with col_btn:
+                                                st.link_button("💬", f"https://wa.me/{adv['whatsapp']}", key=f"adv_out_{p['id']}_{adv['nome']}")
                         
                         if not p["advogados"]:
-                            st.info("Nenhum advogado encontrado")
+                            st.info("Nenhum advogado")
                     
                     # Texto completo (recolhível)
                     with st.expander("📄 Ver texto completo do processo"):
