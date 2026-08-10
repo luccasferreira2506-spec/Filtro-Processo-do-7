@@ -89,7 +89,7 @@ try:
     API_ID = int(st.secrets["API_ID"])
     API_HASH = st.secrets["API_HASH"]
     BOT_USERNAME = st.secrets.get("BOT_USERNAME", "")
-    GRUPO_IDENTIFICADOR = st.secrets.get("GRUPO_IDENTIFICADOR", "")
+    GRUPO_IDENTIFICADOR = int(st.secrets.get("GRUPO_IDENTIFICADOR", 0))
     STRING_SESSION = st.secrets.get("TELEGRAM_STRING_SESSION", "")
 except KeyError as e:
     st.error(f"⚠️ Erro nas credenciais dos Secrets: A chave {e} não foi configurada.")
@@ -343,16 +343,14 @@ else:
             
         with col_oab:
             numero_oab_raw = st.text_input("Número da OAB:")
-            if numero_oab_raw and not numero_oab_raw.isdigit():
-                st.warning("⚠️ O sistema aceita apenas números. Letras serão ignoradas.")
             apenas_numeros_oab = re.sub(r'\D', '', numero_oab_raw)
             
         with col_buscar:
             st.write("") 
             st.write("") 
             if st.button("🚀 Consultar OAB no Telegram", type="primary", use_container_width=True):
-                if not apenas_numeros_oab:
-                    st.warning("⚠️ Digite um número de OAB válido.")
+                if len(apenas_numeros_oab) != 5:
+                    st.toast("⚠️ O número da OAB deve conter exatamente 5 dígitos!", icon="❌")
                 else:
                     comando_formatado = f"/oab {uf_selecionada.lower()}{apenas_numeros_oab}"
                     with st.spinner("Buscando no Telegram..."):
