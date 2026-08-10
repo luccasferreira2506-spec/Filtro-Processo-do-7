@@ -1,0 +1,11 @@
+# Credenciais e Segredos do Streamlit
+secrets.toml
+.streamlit/secrets.toml
+
+# Banco de dados local SQLite
+banco.db
+*.db
+
+# Cache e arquivos temporários do Python
+__pycache__/
+*.pyc
