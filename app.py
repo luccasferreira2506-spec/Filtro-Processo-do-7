@@ -169,7 +169,7 @@ with st.sidebar:
     pagina = st.radio("📱 Menu", ["🔍 Processos", "📜 Histórico", "👥 Contas"])
 
 # ==============================================================================
-# 🔄 FUNÇÕES DE EXTRAÇÃO - FORMATO REAL
+# 🔄 FUNÇÕES DE EXTRAÇÃO E FILTRAGEM (CORRIGIDAS)
 # ==============================================================================
 async def buscar_telegram(comando, identificador):
     try:
@@ -195,11 +195,14 @@ async def buscar_telegram(comando, identificador):
         st.error(f"Erro Telegram: {e}")
         return None
 
+def extrair_campo_simples(padrao, texto, padrao_padrao="Não informado"):
+    """Extrai um campo simples do texto"""
+    match = re.search(padrao, texto, re.IGNORECASE)
+    return match.group(1).strip() if match else padrao_padrao
+
 def extrair_telefones_do_bloco(bloco):
     """Extrai telefones no formato (XX) XXXX-XXXX ou (XX) XXXXX-XXXX"""
     telefones = []
-    
-    # Padrão: (87) 3856-1266 ou (87) 99638-2559
     padrao = r'\(?(\d{2})\)?\s*(\d{4,5})-?(\d{4})'
     matches = re.findall(padrao, bloco)
     
@@ -213,15 +216,11 @@ def extrair_telefones_do_bloco(bloco):
 def extrair_advogados_do_bloco(bloco, polo=""):
     """Extrai advogados no formato: NOME (CPF: XXXX)"""
     advogados = []
-    
-    # Padrão: Advogado: NOME (CPF: 123456789)
-    # ou: - ADVOGADO: NOME (CPF: 123456789)
     padrao = r'Advogado:\s*([^;(]+?)\s*\(CPF:\s*(\d+)\)'
     matches = re.findall(padrao, bloco, re.IGNORECASE)
     
     for nome, cpf in matches:
         nome = nome.strip()
-        # Remover duplicados
         if not any(a["nome"] == nome for a in advogados):
             advogados.append({
                 "nome": nome,
@@ -234,9 +233,7 @@ def extrair_advogados_do_bloco(bloco, polo=""):
 def extrair_partes_passivo(bloco):
     """Extrai múltiplas partes do polo passivo"""
     partes = []
-    
-    # Encontrar todas as partes no polo passivo
-    padrao_partes = r'- NOME:\s*(.+?)\n(.*?)(?=- NOME:|- ADVOGADO:|PROCESSO:|$)'
+    padrao_partes = r'- NOME:\s*(.+?)\n(.*?)(?=- NOME:|- ADVOGADO:|$)'
     matches = re.findall(padrao_partes, bloco, re.DOTALL)
     
     for nome, detalhes in matches:
@@ -248,33 +245,33 @@ def extrair_partes_passivo(bloco):
             "telefones": []
         }
         
-        # Extrair DOC
         doc_match = re.search(r'DOC:\s*(\d+)', detalhes)
         if doc_match:
             parte["doc"] = doc_match.group(1)
         
-        # Extrair RENDA
         renda_match = re.search(r'RENDA:\s*(.+?)(?:\n|$)', detalhes)
         if renda_match:
             parte["renda"] = renda_match.group(1).strip()
         
-        # Extrair IDADE
         idade_match = re.search(r'IDADE:\s*(\d+)', detalhes)
         if idade_match:
             parte["idade"] = idade_match.group(1)
         
-        # Extrair TELEFONES
         parte["telefones"] = extrair_telefones_do_bloco(detalhes)
-        
         partes.append(parte)
     
     return partes
+
+def verificar_processo_restrito(texto):
+    """Verifica se o processo é restrito"""
+    restrito = ["ocultada", "ocultado", "res. 121", "segredo de justiça", "sigilo", "restrito", "confidencial"]
+    texto_lower = texto.lower()
+    return any(termo in texto_lower for termo in restrito)
 
 def processar_relatorio_completo(texto):
     """Processa o relatório no formato real"""
     # Separar processos pelo separador
     blocos_processos = re.split(r'-{3,}', texto)
-    
     processos = []
     
     for idx, bloco in enumerate(blocos_processos):
@@ -330,19 +327,30 @@ def processar_relatorio_completo(texto):
         processo["todos_advogados"] = processo["polo_ativo"]["advogados"] + processo["advogados_passivo"]
         
         # Verificar restrito
-        processo["restrito"] = any(
-            termo in bloco.lower() 
-            for termo in ["ocultada", "ocultado", "res. 121", "segredo de justiça", "sigilo"]
-        )
-        
+        processo["restrito"] = verificar_processo_restrito(bloco)
         processo["texto_completo"] = bloco
         processos.append(processo)
     
     return processos
 
-def extrair_campo_simples(padrao, texto, padrao_padrao="Não informado"):
-    match = re.search(padrao, texto, re.IGNORECASE)
-    return match.group(1).strip() if match else padrao_padrao
+def filtrar_processos(processos, busca="", mostrar_restritos=False):
+    """Filtra processos por busca e restrição"""
+    processos_filtrados = []
+    
+    for p in processos:
+        # Filtrar por restrição
+        if p["restrito"] and not mostrar_restritos:
+            continue
+        
+        # Filtrar por busca
+        if busca:
+            texto_busca = p["texto_completo"].lower()
+            if busca.lower() in texto_busca:
+                processos_filtrados.append(p)
+        else:
+            processos_filtrados.append(p)
+    
+    return processos_filtrados
 
 def salvar_consulta(origem, conteudo):
     historicos = carregar_dados("historicos.json")
@@ -451,14 +459,8 @@ if pagina == "🔍 Processos":
             with col2:
                 busca = st.text_input("🔍 Buscar por nome, CPF ou número", placeholder="Digite para filtrar...")
             
-            # Filtrar processos
-            processos_filtrados = []
-            for p in processos:
-                if p["restrito"] and not mostrar_restritos:
-                    continue
-                if busca and busca.lower() not in p["texto_completo"].lower():
-                    continue
-                processos_filtrados.append(p)
+            # Aplicar filtros
+            processos_filtrados = filtrar_processos(processos, busca, mostrar_restritos)
             
             st.markdown(f"### 📋 Mostrando {len(processos_filtrados)} de {visiveis} processos visíveis")
             
