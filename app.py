@@ -169,7 +169,7 @@ with st.sidebar:
     pagina = st.radio("📱 Menu", ["🔍 Processos", "📜 Histórico", "👥 Contas"])
 
 # ==============================================================================
-# 🔄 FUNÇÕES DE EXTRAÇÃO E FILTRAGEM (CORRIGIDAS)
+# 🔄 FUNÇÕES DE EXTRAÇÃO E FILTRAGEM
 # ==============================================================================
 async def buscar_telegram(comando, identificador):
     try:
@@ -196,12 +196,10 @@ async def buscar_telegram(comando, identificador):
         return None
 
 def extrair_campo_simples(padrao, texto, padrao_padrao="Não informado"):
-    """Extrai um campo simples do texto"""
     match = re.search(padrao, texto, re.IGNORECASE)
     return match.group(1).strip() if match else padrao_padrao
 
 def extrair_telefones_do_bloco(bloco):
-    """Extrai telefones no formato (XX) XXXX-XXXX ou (XX) XXXXX-XXXX"""
     telefones = []
     padrao = r'\(?(\d{2})\)?\s*(\d{4,5})-?(\d{4})'
     matches = re.findall(padrao, bloco)
@@ -214,7 +212,6 @@ def extrair_telefones_do_bloco(bloco):
     return telefones
 
 def extrair_advogados_do_bloco(bloco, polo=""):
-    """Extrai advogados no formato: NOME (CPF: XXXX)"""
     advogados = []
     padrao = r'Advogado:\s*([^;(]+?)\s*\(CPF:\s*(\d+)\)'
     matches = re.findall(padrao, bloco, re.IGNORECASE)
@@ -231,7 +228,6 @@ def extrair_advogados_do_bloco(bloco, polo=""):
     return advogados
 
 def extrair_partes_passivo(bloco):
-    """Extrai múltiplas partes do polo passivo"""
     partes = []
     padrao_partes = r'- NOME:\s*(.+?)\n(.*?)(?=- NOME:|- ADVOGADO:|$)'
     matches = re.findall(padrao_partes, bloco, re.DOTALL)
@@ -263,14 +259,11 @@ def extrair_partes_passivo(bloco):
     return partes
 
 def verificar_processo_restrito(texto):
-    """Verifica se o processo é restrito"""
     restrito = ["ocultada", "ocultado", "res. 121", "segredo de justiça", "sigilo", "restrito", "confidencial"]
     texto_lower = texto.lower()
     return any(termo in texto_lower for termo in restrito)
 
 def processar_relatorio_completo(texto):
-    """Processa o relatório no formato real"""
-    # Separar processos pelo separador
     blocos_processos = re.split(r'-{3,}', texto)
     processos = []
     
@@ -278,7 +271,6 @@ def processar_relatorio_completo(texto):
         if not bloco.strip() or "PROCESSO:" not in bloco:
             continue
         
-        # Extrair campos básicos
         processo = {
             "id": idx,
             "numero": extrair_campo_simples(r'PROCESSO:\s*([\d\-\.]+)', bloco),
@@ -291,7 +283,6 @@ def processar_relatorio_completo(texto):
             "orgao_julgador": extrair_campo_simples(r'ORGAO JULGADOR:\s*(.+)', bloco),
         }
         
-        # Separar polos
         polo_ativo_texto = ""
         polo_passivo_texto = ""
         
@@ -303,7 +294,6 @@ def processar_relatorio_completo(texto):
         if match_passivo:
             polo_passivo_texto = match_passivo.group(1)
         
-        # POLO ATIVO
         processo["polo_ativo"] = {
             "nome": extrair_campo_simples(r'NOME:\s*(.+)', polo_ativo_texto),
             "doc": extrair_campo_simples(r'DOC:\s*(\d+)', polo_ativo_texto),
@@ -313,44 +303,20 @@ def processar_relatorio_completo(texto):
             "advogados": extrair_advogados_do_bloco(polo_ativo_texto, "ATIVO")
         }
         
-        # POLO PASSIVO (pode ter múltiplas partes)
         processo["partes_passivo"] = extrair_partes_passivo(polo_passivo_texto)
         processo["advogados_passivo"] = extrair_advogados_do_bloco(polo_passivo_texto, "PASSIVO")
         
-        # Telefones consolidados
         todos_telefones = processo["polo_ativo"]["telefones"][:]
         for parte in processo["partes_passivo"]:
             todos_telefones.extend(parte["telefones"])
         processo["todos_telefones"] = list(set(todos_telefones))
         
-        # Advogados consolidados
         processo["todos_advogados"] = processo["polo_ativo"]["advogados"] + processo["advogados_passivo"]
-        
-        # Verificar restrito
         processo["restrito"] = verificar_processo_restrito(bloco)
         processo["texto_completo"] = bloco
         processos.append(processo)
     
     return processos
-
-def filtrar_processos(processos, busca="", mostrar_restritos=False):
-    """Filtra processos por busca e restrição"""
-    processos_filtrados = []
-    
-    for p in processos:
-        # Filtrar por restrição
-        if p["restrito"] and not mostrar_restritos:
-            continue
-        
-        # Filtrar por busca
-        if busca:
-            texto_busca = p["texto_completo"].lower()
-            if busca.lower() in texto_busca:
-                processos_filtrados.append(p)
-        else:
-            processos_filtrados.append(p)
-    
-    return processos_filtrados
 
 def salvar_consulta(origem, conteudo):
     historicos = carregar_dados("historicos.json")
@@ -442,6 +408,10 @@ if pagina == "🔍 Processos":
         processos = processar_relatorio_completo(st.session_state.conteudo)
         
         if processos:
+            # Inicializar estado de ocultação manual
+            if "processos_ocultos" not in st.session_state:
+                st.session_state.processos_ocultos = {}
+            
             # Métricas
             total = len(processos)
             restritos = sum(1 for p in processos if p["restrito"])
@@ -453,24 +423,68 @@ if pagina == "🔍 Processos":
             col_m3.metric("Restritos", restritos)
             
             # Filtros
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 mostrar_restritos = st.checkbox("👁️ Mostrar processos restritos", value=False)
             with col2:
                 busca = st.text_input("🔍 Buscar por nome, CPF ou número", placeholder="Digite para filtrar...")
+            with col3:
+                # Filtro por advogado do polo ativo
+                advogados_unicos = []
+                for p in processos:
+                    for adv in p["polo_ativo"]["advogados"]:
+                        if adv["nome"] not in advogados_unicos:
+                            advogados_unicos.append(adv["nome"])
+                
+                if advogados_unicos:
+                    advogado_filtro = st.selectbox(
+                        "👨‍⚖️ Filtrar por Advogado (Polo Ativo)",
+                        ["Todos"] + advogados_unicos,
+                        key="filtro_advogado"
+                    )
+                else:
+                    advogado_filtro = "Todos"
             
             # Aplicar filtros
-            processos_filtrados = filtrar_processos(processos, busca, mostrar_restritos)
+            processos_filtrados = []
+            for p in processos:
+                # Filtro de restritos
+                if p["restrito"] and not mostrar_restritos:
+                    continue
+                
+                # Filtro de busca
+                if busca and busca.lower() not in p["texto_completo"].lower():
+                    continue
+                
+                # Filtro por advogado
+                if advogado_filtro != "Todos":
+                    tem_advogado = any(
+                        adv["nome"] == advogado_filtro 
+                        for adv in p["polo_ativo"]["advogados"]
+                    )
+                    if not tem_advogado:
+                        continue
+                
+                # Filtro de ocultação manual
+                if st.session_state.processos_ocultos.get(p["id"], False):
+                    continue
+                
+                processos_filtrados.append(p)
             
-            st.markdown(f"### 📋 Mostrando {len(processos_filtrados)} de {visiveis} processos visíveis")
+            st.markdown(f"### 📋 Mostrando {len(processos_filtrados)} de {total} processos")
             
-            # Exibir cada processo
+            # Exibir cada processo (recolhível)
             for p in processos_filtrados:
-                with st.container(border=True):
+                # Botão para ocultar/desocultar
+                col_btn, col_titulo = st.columns([1, 20])
+                with col_btn:
+                    if st.button("👁️", key=f"hide_{p['id']}", help="Ocultar processo"):
+                        st.session_state.processos_ocultos[p["id"]] = True
+                        st.rerun()
+                
+                with st.expander(f"📌 {p['numero']} - {p['polo_ativo']['nome'][:50]}", expanded=False):
                     if p["restrito"]:
                         st.warning("⚠️ PROCESSO RESTRITO")
-                    
-                    st.markdown(f"### 📌 Processo: {p['numero']}")
                     
                     # Informações principais
                     col1, col2 = st.columns(2)
@@ -487,179 +501,7 @@ if pagina == "🔍 Processos":
                     
                     st.markdown("---")
                     
-                    # POLO ATIVO
-                    st.markdown("### 👤 Polo Ativo")
-                    pa = p["polo_ativo"]
-                    st.write(f"**Nome:** {pa['nome']}")
-                    if pa['doc']:
-                        st.write(f"**Documento:** {pa['doc']}")
-                    if pa['renda']:
-                        st.write(f"**Renda:** {pa['renda']}")
-                    if pa['idade']:
-                        st.write(f"**Idade:** {pa['idade']} anos")
-                    
-                    # Telefones do Polo Ativo
-                    if pa['telefones']:
-                        with st.expander(f"📞 Telefones ({len(pa['telefones'])})", expanded=False):
-                            for tel in pa['telefones']:
-                                ddd = tel[2:4]
-                                num = tel[4:]
-                                if len(num) == 9:
-                                    tel_formatado = f"({ddd}) {num[:5]}-{num[5:]}"
-                                else:
-                                    tel_formatado = f"({ddd}) {num[:4]}-{num[4:]}"
-                                
-                                col_tel, col_copy, col_whats = st.columns([3, 1, 1])
-                                with col_tel:
-                                    st.code(tel_formatado)
-                                with col_copy:
-                                    if st.button("📋", key=f"copy_at_{p['id']}_{tel}", help="Copiar"):
-                                        st.toast("✅ Copiado!")
-                                with col_whats:
-                                    st.link_button("💬", f"https://wa.me/{tel}", key=f"whats_at_{p['id']}_{tel}")
-                    
-                    # Advogados do Polo Ativo
-                    if pa['advogados']:
-                        with st.expander(f"👨‍⚖️ Advogados - Polo Ativo ({len(pa['advogados'])})", expanded=False):
-                            for adv in pa['advogados']:
-                                st.write(f"• **{adv['nome']}** - CPF: {adv['cpf']}")
-                    
-                    st.markdown("---")
-                    
-                    # POLO PASSIVO
-                    st.markdown("### 🏛️ Polo Passivo")
-                    
-                    if p['partes_passivo']:
-                        for i, parte in enumerate(p['partes_passivo']):
-                            with st.container(border=True):
-                                st.write(f"**Parte {i+1}: {parte['nome']}**")
-                                if parte['doc']:
-                                    st.write(f"📄 Doc: {parte['doc']}")
-                                if parte['renda']:
-                                    st.write(f"💰 Renda: {parte['renda']}")
-                                if parte['idade']:
-                                    st.write(f"🎂 Idade: {parte['idade']} anos")
-                                
-                                if parte['telefones']:
-                                    with st.expander(f"📞 Telefones ({len(parte['telefones'])})", expanded=False):
-                                        for tel in parte['telefones']:
-                                            ddd = tel[2:4]
-                                            num = tel[4:]
-                                            if len(num) == 9:
-                                                tel_formatado = f"({ddd}) {num[:5]}-{num[5:]}"
-                                            else:
-                                                tel_formatado = f"({ddd}) {num[:4]}-{num[4:]}"
-                                            
-                                            col_tel, col_copy, col_whats = st.columns([3, 1, 1])
-                                            with col_tel:
-                                                st.code(tel_formatado)
-                                            with col_copy:
-                                                if st.button("📋", key=f"copy_pass_{p['id']}_{i}_{tel}", help="Copiar"):
-                                                    st.toast("✅ Copiado!")
-                                            with col_whats:
-                                                st.link_button("💬", f"https://wa.me/{tel}", key=f"whats_pass_{p['id']}_{i}_{tel}")
-                    
-                    # Advogados do Polo Passivo
-                    if p['advogados_passivo']:
-                        with st.expander(f"👨‍⚖️ Advogados - Polo Passivo ({len(p['advogados_passivo'])})", expanded=False):
-                            for adv in p['advogados_passivo']:
-                                st.write(f"• **{adv['nome']}** - CPF: {adv['cpf']}")
-                    
-                    # Texto completo
-                    with st.expander("📄 Ver texto completo do processo"):
-                        st.code(p["texto_completo"], language=None)
-                    
-                    st.markdown("---")
-            
-            # Downloads
-            st.markdown("---")
-            st.markdown("### 📥 Downloads")
-            col_d1, col_d2 = st.columns(2)
-            
-            with col_d1:
-                texto_visiveis = "\n----------------------------------------------\n".join([p["texto_completo"] for p in processos_filtrados])
-                st.download_button(
-                    "📥 Baixar Visíveis",
-                    texto_visiveis,
-                    f"visiveis_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                    use_container_width=True
-                )
-            
-            with col_d2:
-                st.download_button(
-                    "📄 Baixar Completo",
-                    st.session_state.conteudo,
-                    f"completo_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                    use_container_width=True
-                )
-        else:
-            st.warning("Nenhum processo encontrado")
-    
-    elif "conteudo" not in st.session_state:
-        st.info("👆 Use as opções acima para carregar um relatório")
-
-elif pagina == "📜 Histórico":
-    st.markdown("---")
-    st.subheader("📜 Histórico de Consultas")
-    
-    historicos = carregar_dados("historicos.json")
-    usuario = st.session_state.usuario
-    
-    if usuario in historicos and historicos[usuario]:
-        st.info(f"💾 {len(historicos[usuario])} consultas salvas")
-        
-        for i, h in enumerate(historicos[usuario]):
-            with st.container(border=True):
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"📅 **{h['data']}**")
-                    st.write(f"📌 {h['origem']}")
-                    st.write(f"📊 {h['processos']} processos")
-                with col2:
-                    if st.button("🔄 Carregar", key=f"hist_{i}", use_container_width=True):
-                        st.session_state.conteudo = h["conteudo"]
-                        st.session_state.origem = h["origem"]
-                        st.rerun()
-        
-        if st.button("🗑️ Limpar Histórico", use_container_width=True):
-            historicos[usuario] = []
-            salvar_dados("historicos.json", historicos)
-            st.rerun()
-    else:
-        st.info("Nenhuma consulta salva ainda")
-
-elif pagina == "👥 Contas":
-    if st.session_state.usuario != "admin":
-        st.error("🔒 Apenas o admin pode gerenciar contas")
-    else:
-        st.markdown("---")
-        st.subheader("👥 Gerenciar Contas")
-        
-        usuarios = carregar_dados("usuarios.json")
-        
-        with st.expander("📋 Contas Existentes", expanded=True):
-            for u in usuarios:
-                st.write(f"👤 **{u}**")
-        
-        with st.expander("➕ Criar Nova Conta"):
-            novo = st.text_input("Usuário", key="novo")
-            senha = st.text_input("Senha", type="password", key="senha")
-            
-            if st.button("Criar Conta", use_container_width=True, type="primary"):
-                if novo and senha:
-                    if novo not in usuarios:
-                        usuarios[novo] = senha
-                        salvar_dados("usuarios.json", usuarios)
-                        st.success(f"✅ Conta '{novo}' criada!")
-                        st.rerun()
-                    else:
-                        st.error("❌ Usuário já existe")
-        
-        if len(usuarios) > 1:
-            with st.expander("🗑️ Excluir Conta"):
-                user_del = st.selectbox("Selecionar", [u for u in usuarios if u != "admin"])
-                if st.button("Excluir Conta", use_container_width=True):
-                    del usuarios[user_del]
-                    salvar_dados("usuarios.json", usuarios)
-                    st.success(f"✅ Conta '{user_del}' excluída!")
-                    st.rerun()
+                    # POLO ATIVO (recolhível)
+                    with st.expander("### 👤 Polo Ativo", expanded=False):
+                        pa = p["polo_ativo"]
+                        st.write(f"**Nome:** {pa['nom
