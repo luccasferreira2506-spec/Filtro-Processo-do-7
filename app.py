@@ -5,39 +5,24 @@ from datetime import datetime, timedelta
 import hashlib
 import re
 from pathlib import Path
-import asyncio
-from telethon import TelegramClient
-from telethon.sessions import StringSession
 
 # ============= CONFIG =============
 st.set_page_config(
-    page_title="Painel Supremo do Sete V2.1",
+    page_title="Painel Supremo do Sete V2.2",
     page_icon="⚖️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
-
-# ============= CARREGAR SECRETS =============
-try:
-    SENHA_APP = st.secrets["SENHA_APP"]
-    API_ID = int(st.secrets["API_ID"])
-    API_HASH = st.secrets["API_HASH"]
-    BOT_USERNAME = st.secrets.get("BOT_USERNAME", "")
-    GRUPO_ID = int(st.secrets.get("GRUPO_IDENTIFICADOR", 0))
-    STRING_SESSION = st.secrets.get("TELEGRAM_STRING_SESSION", "")
-except KeyError as e:
-    st.error(f"⚠️ Configure a chave {e} no secrets.toml")
-    st.info("""
-    📋 **Como configurar:**
-    1. Crie o arquivo `.streamlit/secrets.toml`
-    2. Adicione as chaves necessárias
-    3. Reinicie o app
-    """)
-    st.stop()
 
 # ============= ESTILOS CSS =============
 st.markdown("""
 <style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
     :root {
         --primary: #1e3a8a;
         --accent: #dc2626;
@@ -51,16 +36,22 @@ st.markdown("""
     }
     
     body {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
         background-color: var(--bg);
+        color: var(--text);
     }
     
     .main {
         background-color: var(--bg);
+        padding: 0 !important;
+    }
+    
+    [data-testid="stAppViewContainer"] {
+        background-color: var(--bg);
     }
     
     .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
+        gap: 0;
         border-bottom: 2px solid var(--border);
     }
     
@@ -75,12 +66,12 @@ st.markdown("""
         padding: 20px;
         margin-bottom: 16px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
     }
     
     .card:hover {
         box-shadow: 0 4px 12px rgba(0,0,0,0.12);
         border-color: var(--primary);
-        transition: all 0.3s ease;
     }
     
     .card-header {
@@ -90,19 +81,6 @@ st.markdown("""
         margin-bottom: 12px;
         border-bottom: 2px solid var(--border);
         padding-bottom: 8px;
-    }
-    
-    .card-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        margin-bottom: 12px;
-    }
-    
-    @media (max-width: 768px) {
-        .card-row {
-            grid-template-columns: 1fr;
-        }
     }
     
     .info-group {
@@ -123,14 +101,17 @@ st.markdown("""
     }
     
     .info-value {
-        font-size: 16px;
+        font-size: 15px;
         color: var(--text);
         word-break: break-all;
         font-family: 'Courier New', monospace;
+        font-weight: 500;
     }
     
-    .badge {
+    .badge-danger {
         display: inline-block;
+        background: #fee2e2;
+        color: var(--accent);
         padding: 4px 12px;
         border-radius: 20px;
         font-size: 12px;
@@ -139,87 +120,20 @@ st.markdown("""
         margin-bottom: 6px;
     }
     
-    .badge-success {
-        background: #dcfce7;
-        color: var(--success);
-    }
-    
-    .badge-warning {
-        background: #fef3c7;
-        color: var(--warning);
-    }
-    
-    .badge-danger {
-        background: #fee2e2;
-        color: var(--accent);
-    }
-    
     .processo-container {
-        border: 1px solid var(--border);
+        border: 2px solid var(--border);
         border-radius: 8px;
         padding: 16px;
         margin-bottom: 12px;
         background: var(--card);
+        cursor: pointer;
         transition: all 0.3s ease;
     }
     
     .processo-container:hover {
         border-color: var(--primary);
         background: #f9fafb;
-    }
-    
-    .processo-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        cursor: pointer;
-        padding: 8px;
-        margin: -8px;
-        padding: 8px;
-        border-radius: 6px;
-    }
-    
-    .processo-header:hover {
-        background: var(--bg);
-    }
-    
-    .processo-numero {
-        font-family: 'Courier New', monospace;
-        font-weight: 700;
-        color: var(--primary);
-        font-size: 15px;
-    }
-    
-    .processo-polo {
-        color: var(--muted);
-        font-size: 13px;
-        font-weight: 500;
-    }
-    
-    .action-buttons {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-top: 12px;
-    }
-    
-    .btn-copy {
-        padding: 8px 12px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--bg);
-        color: var(--primary);
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        font-family: monospace;
-    }
-    
-    .btn-copy:hover {
-        background: var(--primary);
-        color: white;
-        border-color: var(--primary);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     
     .filtro-container {
@@ -227,14 +141,10 @@ st.markdown("""
         border: 2px solid var(--border);
         border-radius: 12px;
         padding: 20px;
-        margin-bottom: 20px;
-    }
-    
-    .search-box {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 12px;
-        flex-wrap: wrap;
+        margin: 20px;
+        position: sticky;
+        top: 0;
+        z-index: 10;
     }
     
     .stats-row {
@@ -265,12 +175,6 @@ st.markdown("""
         margin-top: 4px;
     }
     
-    .polo-section {
-        margin-top: 16px;
-        padding-top: 16px;
-        border-top: 2px solid var(--border);
-    }
-    
     .parte-item {
         background: var(--bg);
         border-left: 3px solid var(--accent);
@@ -279,43 +183,14 @@ st.markdown("""
         border-radius: 6px;
     }
     
-    .advogado-list {
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 6px;
+    .success-msg {
+        background: #dcfce7;
+        border-left: 4px solid var(--success);
+        color: var(--success);
         padding: 12px;
-        margin-bottom: 12px;
-        max-height: 200px;
-        overflow-y: auto;
-    }
-    
-    .advogado-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px;
-        border-bottom: 1px solid var(--border);
-        font-size: 13px;
-    }
-    
-    .advogado-item:last-child {
-        border-bottom: none;
-    }
-    
-    .cp-button {
-        background: #e0f2fe;
-        color: var(--primary);
-        border: 1px solid var(--primary);
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 11px;
-        cursor: pointer;
-        font-weight: 600;
-    }
-    
-    .cp-button:hover {
-        background: var(--primary);
-        color: white;
+        border-radius: 6px;
+        font-weight: 500;
+        margin-bottom: 16px;
     }
     
     .restricted-alert {
@@ -329,13 +204,116 @@ st.markdown("""
         font-weight: 500;
     }
     
-    .success-msg {
-        background: #dcfce7;
-        border-left: 4px solid var(--success);
-        color: var(--success);
-        padding: 12px;
-        border-radius: 6px;
-        font-weight: 500;
+    .back-button-container {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+        margin-left: 20px;
+        margin-right: 20px;
+    }
+    
+    .consulta-header {
+        text-align: center;
+        padding: 40px 20px;
+        background: linear-gradient(135deg, #f0f9ff 0%, #f8fafc 100%);
+    }
+    
+    .consulta-header h1 {
+        color: var(--primary);
+        margin-bottom: 10px;
+        font-size: 32px;
+    }
+    
+    .consulta-header p {
+        color: var(--muted);
+        font-size: 16px;
+    }
+    
+    .tab-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 12px;
+        margin: 30px 20px;
+    }
+    
+    .tab-card {
+        background: var(--card);
+        border: 2px solid var(--border);
+        border-radius: 12px;
+        padding: 24px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    
+    .tab-card:hover {
+        border-color: var(--primary);
+        box-shadow: 0 4px 12px rgba(30, 58, 138, 0.2);
+        transform: translateY(-2px);
+    }
+    
+    .tab-card h3 {
+        color: var(--primary);
+        margin-bottom: 8px;
+        font-size: 18px;
+    }
+    
+    .tab-card p {
+        color: var(--muted);
+        font-size: 13px;
+    }
+    
+    .login-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        background: linear-gradient(135deg, #f0f9ff 0%, #f8fafc 100%);
+    }
+    
+    .login-card {
+        background: var(--card);
+        border: 2px solid var(--border);
+        border-radius: 16px;
+        padding: 40px;
+        width: 100%;
+        max-width: 400px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    }
+    
+    .login-header {
+        text-align: center;
+        margin-bottom: 30px;
+    }
+    
+    .login-header h1 {
+        color: var(--primary);
+        font-size: 28px;
+        margin-bottom: 8px;
+    }
+    
+    .login-header p {
+        color: var(--muted);
+        font-size: 14px;
+    }
+    
+    @media (max-width: 768px) {
+        .tab-container {
+            grid-template-columns: 1fr;
+        }
+        
+        .login-card {
+            margin: 20px;
+            padding: 24px;
+        }
+        
+        .consulta-header {
+            padding: 24px 12px;
+        }
+        
+        .consulta-header h1 {
+            font-size: 24px;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -391,85 +369,30 @@ def criar_sessao(username):
     save_sessoes(sessoes)
 
 def limpar_sessoes_expiradas():
-    """Remove sessões expiradas - CORRIGIDO"""
-    try:
-        sessoes = load_sessoes()
-        
-        if not sessoes:
-            return
-        
-        agora = datetime.now()
-        sessoes_ativas = {}
-        
-        for username, sessao in sessoes.items():
-            try:
-                if not isinstance(sessao, dict):
-                    continue
-                
-                expira_str = sessao.get("expira", "")
-                
-                if not expira_str:
-                    continue
-                
-                expira = datetime.fromisoformat(expira_str)
-                
-                if expira > agora:
-                    sessoes_ativas[username] = sessao
-            except (ValueError, TypeError, KeyError, AttributeError):
-                continue
-        
-        if len(sessoes_ativas) != len(sessoes):
-            save_sessoes(sessoes_ativas)
-    except Exception:
-        pass
+    sessoes = load_sessoes()
+    agora = datetime.now()
+    sessoes_ativas = {}
+    
+    for username, sessao in sessoes.items():
+        expira = datetime.fromisoformat(sessao["expira"])
+        if expira > agora:
+            sessoes_ativas[username] = sessao
+    
+    save_sessoes(sessoes_ativas)
 
-# ============= FUNÇÃO DE CONSULTA TELEGRAM =============
-async def buscar_arquivo_no_grupo(comando_oab, identificador_busca):
-    """Busca arquivo no grupo do Telegram"""
+def get_senha_padrao():
+    """Obtém senha padrão do secrets ou usa fallback"""
     try:
-        session = StringSession(STRING_SESSION) if STRING_SESSION else 'sessao_telegram'
-        client = TelegramClient(session, API_ID, API_HASH)
-        
-        await client.start()
-        grupo = await client.get_entity(GRUPO_ID)
-        
-        mensagem_enviada = await client.send_message(grupo, comando_oab)
-        
-        arquivo_bytes = None
-        for _ in range(40):
-            await asyncio.sleep(1)
-            async for message in client.iter_messages(grupo, limit=15):
-                sender_name = getattr(message.sender, 'username', '') if message.sender else ''
-                
-                if sender_name == BOT_USERNAME or BOT_USERNAME in str(message.sender_id):
-                    if message.file and message.id > mensagem_enviada.id:
-                        eh_resposta_direta = (message.reply_to_msg_id == mensagem_enviada.id)
-                        texto_mensagem = str(message.text).lower() if message.text else ""
-                        tem_oab_no_texto = (identificador_busca.lower() in texto_mensagem)
-                        nome_arquivo = str(message.file.name).lower() if hasattr(message.file, 'name') and message.file.name else ""
-                        tem_oab_no_arquivo = (identificador_busca.lower() in nome_arquivo)
-                        
-                        if eh_resposta_direta or tem_oab_no_texto or tem_oab_no_arquivo:
-                            arquivo_bytes = await client.download_media(message.file, file=bytes)
-                            break
-            
-            if arquivo_bytes:
-                break
-        
-        await client.disconnect()
-        return arquivo_bytes
-    except Exception as e:
-        st.error(f"Erro Telegram: {e}")
-        return None
+        return st.secrets.get("SENHA_APP", "admin123")
+    except:
+        return "admin123"
 
 # ============= PARSE DO ARQUIVO =============
 def extrair_cpf(texto):
-    """Extrai CPF do formato (CPF: XXXXX)"""
     match = re.search(r'\(CPF:\s*(\d+)\)', texto)
     return match.group(1) if match else None
 
 def extrair_processo(texto):
-    """Extrai dados estruturados de um bloco de processo"""
     lines = texto.split('\n')
     processo = {
         'numero': '',
@@ -487,13 +410,11 @@ def extrair_processo(texto):
     }
     
     modo = None
-    parte_atual = None
     
-    for line in lines:
+    for i, line in enumerate(lines):
         line = line.strip()
         
-        # Detectar restrição
-        if 'ocultada' in line.lower() or 'res. 121' in line.lower() or 'segredo' in line.lower():
+        if 'ocultada' in line.lower() or 'res. 121' in line.lower():
             processo['restrito'] = True
         
         if line.startswith('PROCESSO:'):
@@ -512,77 +433,47 @@ def extrair_processo(texto):
             processo['data_inicio'] = line.replace('DATA INICIO:', '').strip()
         elif line.startswith('ORGAO JULGADOR:'):
             processo['orgao_julgador'] = line.replace('ORGAO JULGADOR:', '').strip()
+        elif line.startswith('ULTIMA MOVIMENTACAO:'):
+            modo = 'movimentacao'
         elif line.startswith('POLO ATIVO:'):
             modo = 'polo_ativo'
         elif line.startswith('POLO PASSIVO:'):
             modo = 'polo_passivo'
         elif line.startswith('- NOME:'):
             nome = line.replace('- NOME:', '').strip()
-            parte_atual = {'nome': nome, 'cpf': None, 'advogados': []}
             if modo == 'polo_ativo':
-                processo['polo_ativo'].append(parte_atual)
+                processo['polo_ativo'].append({'nome': nome, 'cpf': None, 'advogados': []})
             elif modo == 'polo_passivo':
-                processo['polo_passivo'].append(parte_atual)
-        elif line.startswith('- DOC:'):
-            doc = line.replace('- DOC:', '').strip()
-            if parte_atual:
-                parte_atual['cpf'] = doc
-        elif 'ADVOGADO:' in line:
+                processo['polo_passivo'].append({'nome': nome, 'cpf': None, 'advogados': []})
+        elif line.startswith('- ADVOGADO:') or (line.startswith('- ') and 'ADVOGADO:' in line):
             cpf = extrair_cpf(line)
-            nome_adv = re.sub(r'\s*\(CPF:\s*\d+\)\s*', '', line)
-            nome_adv = nome_adv.replace('- ADVOGADO:', '').replace('Advogado:', '').strip()
-            nome_adv = nome_adv.strip(';').strip()
+            nome_adv = re.sub(r'\s*\(CPF:\s*\d+\)\s*', '', line.replace('- ADVOGADO:', '').replace('- ', '').replace('Advogado:', '')).strip()
             
-            if parte_atual:
-                parte_atual['advogados'].append({'nome': nome_adv, 'cpf': cpf})
+            if modo == 'polo_ativo' and processo['polo_ativo']:
+                processo['polo_ativo'][-1]['advogados'].append({'nome': nome_adv, 'cpf': cpf})
+            elif modo == 'polo_passivo' and processo['polo_passivo']:
+                processo['polo_passivo'][-1]['advogados'].append({'nome': nome_adv, 'cpf': cpf})
     
     return processo if processo['numero'] else None
 
 def parsear_arquivo(conteudo):
-    """Parse completo do arquivo de processos"""
     blocos = conteudo.split('----------------------------------------------')
     processos = []
     
-    for bloco in blocos:
-        if bloco.strip():
-            p = extrair_processo(bloco)
-            if p:
-                processos.append(p)
+    for bloco in blocos[1:]:
+        p = extrair_processo(bloco)
+        if p:
+            processos.append(p)
     
     return processos
 
 # ============= FUNÇÕES DE PROCESSAMENTO =============
-def detectar_cpfs_duplicados(processos):
-    """Agrupa CPFs e mostra quantas vezes aparecem"""
-    cpf_map = {}
-    
-    for p in processos:
-        for parte in p['polo_ativo'] + p['polo_passivo']:
-            for adv in parte['advogados']:
-                if adv['cpf']:
-                    if adv['cpf'] not in cpf_map:
-                        cpf_map[adv['cpf']] = {'nome': adv['nome'], 'processos': 0}
-                    cpf_map[adv['cpf']]['processos'] += 1
-    
-    return cpf_map
-
-def filtrar_processos(processos, termo_busca, mostrar_restritos, filtro_advogado):
-    """Filtra processos baseado em critérios"""
+def filtrar_processos(processos, termo_busca, mostrar_restritos):
     resultado = []
     
     for p in processos:
         if p['restrito'] and not mostrar_restritos:
             continue
-        
-        if filtro_advogado:
-            encontrou = False
-            for parte in p['polo_ativo'] + p['polo_passivo']:
-                for adv in parte['advogados']:
-                    if filtro_advogado.lower() in adv['nome'].lower():
-                        encontrou = True
-                        break
-            if not encontrou:
-                continue
         
         if termo_busca:
             termo = termo_busca.lower()
@@ -597,8 +488,6 @@ def filtrar_processos(processos, termo_busca, mostrar_restritos, filtro_advogado
                 for parte in p['polo_ativo'] + p['polo_passivo']:
                     if termo in parte['nome'].lower():
                         encontrou = True
-                    if parte['cpf'] and termo in parte['cpf'].lower():
-                        encontrou = True
                     for adv in parte['advogados']:
                         if termo in adv['nome'].lower() or (adv['cpf'] and termo in adv['cpf']):
                             encontrou = True
@@ -611,7 +500,6 @@ def filtrar_processos(processos, termo_busca, mostrar_restritos, filtro_advogado
     return resultado
 
 def formatar_cpf(cpf_str):
-    """Formata CPF como XXX.XXX.XXX-XX"""
     if not cpf_str:
         return ""
     cpf_limpo = ''.join(filter(str.isdigit, cpf_str))
@@ -619,243 +507,232 @@ def formatar_cpf(cpf_str):
         return f"{cpf_limpo[:3]}.{cpf_limpo[3:6]}.{cpf_limpo[6:9]}-{cpf_limpo[9:]}"
     return cpf_limpo
 
-# ============= UI - LOGIN =============
+# ============= STATE MANAGEMENT =============
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
     st.session_state.usuario = None
+    st.session_state.pagina = "login"
+    st.session_state.processos_carregados = None
+    st.session_state.processo_aberto_idx = None
+    st.session_state.arquivo_nome = None
 
+# ============= LOGIN PAGE =============
 if not st.session_state.autenticado:
     limpar_sessoes_expiradas()
     
-    # ============= AUTO-CORRIGIR SENHA DO ADMIN =============
-    usuarios = load_usuarios()
-    
-    if "admin" not in usuarios:
-        usuarios["admin"] = hash_password(SENHA_APP)
-        save_usuarios(usuarios)
-    elif usuarios["admin"] != hash_password(SENHA_APP):
-        usuarios["admin"] = hash_password(SENHA_APP)
-        save_usuarios(usuarios)
+    st.markdown("""
+    <div class="login-container">
+        <div style="width: 100%; max-width: 400px; padding: 20px;">
+    """, unsafe_allow_html=True)
     
     st.markdown("""
-    <div style='text-align: center; padding: 60px 20px;'>
-        <h1 style='color: #1e3a8a; margin-bottom: 10px;'>⚖️ PAINEL SUPREMO DO SETE</h1>
-        <p style='color: #64748b; font-size: 16px; margin-bottom: 40px;'>v2.1 - Sistema de Limpeza de Processos Judiciais</p>
+    <div class="login-header">
+        <h1>⚖️ PAINEL SUPREMO</h1>
+        <p>Sistema de Limpeza de Processos Judiciais</p>
     </div>
     """, unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns([1, 2, 1])
+    usuario = st.text_input("👤 Usuário", placeholder="Digite seu usuário", key="login_user")
+    senha = st.text_input("🔐 Senha", type="password", placeholder="Digite sua senha", key="login_pass")
     
-    with col2:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
+    if st.button("🔓 ACESSAR", use_container_width=True, type="primary"):
+        usuarios = load_usuarios()
         
-        usuario = st.text_input("👤 Usuário", placeholder="Digite seu usuário", value="admin")
-        senha = st.text_input("🔐 Senha", type="password", placeholder="Digite sua senha")
+        if not usuarios:
+            senha_padrao = get_senha_padrao()
+            usuarios["admin"] = hash_password(senha_padrao)
+            save_usuarios(usuarios)
         
-        if st.button("🔓 ACESSAR", use_container_width=True, type="primary"):
-            usuarios = load_usuarios()
-            
-            if usuario in usuarios and usuarios[usuario] == hash_password(senha):
-                st.session_state.autenticado = True
-                st.session_state.usuario = usuario
-                criar_sessao(usuario)
-                st.success("✅ Login feito com sucesso!")
-                st.rerun()
-            else:
-                st.error("❌ Usuário ou senha incorretos")
-                st.info("💡 Use 'admin' como usuário e a senha do SENHA_APP")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        if usuario in usuarios and usuarios[usuario] == hash_password(senha):
+            st.session_state.autenticado = True
+            st.session_state.usuario = usuario
+            st.session_state.pagina = "consulta"
+            criar_sessao(usuario)
+            st.rerun()
+        else:
+            st.error("❌ Usuário ou senha incorretos")
+    
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 else:
     # ============= SIDEBAR =============
     with st.sidebar:
         st.markdown(f"""
-        <div style='background: #f0f9ff; border-radius: 8px; padding: 16px; border-left: 4px solid #1e3a8a; margin-bottom: 20px;'>
-            <p style='margin: 0; color: #64748b; font-size: 12px; font-weight: 600; text-transform: uppercase;'>Usuário Conectado</p>
-            <p style='margin: 8px 0 0 0; font-size: 18px; font-weight: 700; color: #1e3a8a;'>{st.session_state.usuario}</p>
-            {f'<p style="margin: 4px 0 0 0; color: #16a34a; font-size: 11px;">✓ Admin</p>' if st.session_state.usuario == 'admin' else ''}
+        <div style='background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; padding: 16px; border-left: 4px solid #1e3a8a; margin-bottom: 20px;'>
+            <p style='margin: 0; color: #64748b; font-size: 12px; font-weight: 600; text-transform: uppercase;'>Usuário</p>
+            <p style='margin: 8px 0 0 0; font-size: 16px; font-weight: 700; color: #1e3a8a;'>{st.session_state.usuario}</p>
         </div>
         """, unsafe_allow_html=True)
         
         st.divider()
         
+        if st.session_state.usuario == "admin":
+            if st.button("⚙️ Admin Panel", use_container_width=True):
+                st.session_state.pagina = "admin"
+                st.rerun()
+        
         if st.button("🚪 SAIR", use_container_width=True):
             st.session_state.autenticado = False
             st.session_state.usuario = None
+            st.session_state.pagina = "login"
             st.rerun()
-        
-        st.divider()
-        
-        if st.session_state.usuario == "admin":
-            st.markdown("### ⚙️ ADMIN")
-            
-            with st.expander("👥 Gerenciar Usuários", expanded=False):
-                acao = st.radio("Ação", ["Criar Usuário", "Excluir Usuário", "Listar Usuários"])
-                
-                if acao == "Criar Usuário":
-                    novo_user = st.text_input("Novo usuário")
-                    nova_senha = st.text_input("Senha", type="password")
-                    
-                    if st.button("✅ CRIAR"):
-                        usuarios = load_usuarios()
-                        if novo_user in usuarios:
-                            st.error("Usuário já existe")
-                        else:
-                            usuarios[novo_user] = hash_password(nova_senha)
-                            save_usuarios(usuarios)
-                            st.success(f"✓ Usuário '{novo_user}' criado")
-                
-                elif acao == "Excluir Usuário":
-                    usuarios = load_usuarios()
-                    user_list = [u for u in usuarios.keys() if u != "admin"]
-                    
-                    if user_list:
-                        user_delete = st.selectbox("Selecione usuário", user_list)
-                        
-                        if st.button("❌ DELETAR"):
-                            del usuarios[user_delete]
-                            save_usuarios(usuarios)
-                            st.success(f"✓ Usuário '{user_delete}' deletado")
-                    else:
-                        st.info("Apenas admin existe")
-                
-                elif acao == "Listar Usuários":
-                    usuarios = load_usuarios()
-                    st.write("**Usuários cadastrados:**")
-                    for u in usuarios.keys():
-                        badge = "🔒 ADMIN" if u == "admin" else "👤"
-                        st.write(f"{badge} {u}")
     
-    # ============= MAIN =============
-    st.markdown('<h1 style="text-align: center; color: #1e3a8a; margin-bottom: 30px;">⚖️ PAINEL SUPREMO DO SETE - v2.1</h1>', unsafe_allow_html=True)
-    
-    tab1, tab2, tab3 = st.tabs(["📥 UPLOAD", "📊 ANÁLISE", "📜 HISTÓRICO"])
-    
-    # ============= TAB 1: UPLOAD =============
-    with tab1:
-        st.markdown('<div class="card"><div class="card-header">📥 Upload de Arquivo .txt</div>', unsafe_allow_html=True)
+    # ============= PÁGINA: CONSULTA =============
+    if st.session_state.pagina == "consulta":
+        st.markdown("""
+        <div class='consulta-header'>
+            <h1>⚖️ CONSULTA DE PROCESSOS</h1>
+            <p>Escolha uma opção para começar</p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        arquivo = st.file_uploader("Selecione o arquivo de processos", type="txt", key="upload_main")
+        col1, col2, col3 = st.columns(3)
         
-        if arquivo is not None:
-            conteudo = arquivo.read().decode('utf-8')
-            processos = parsear_arquivo(conteudo)
-            
-            if processos:
-                st.markdown(f"""
-                <div class="success-msg">
-                    ✓ Arquivo processado com sucesso! {len(processos)} processo(s) encontrado(s)
-                </div>
-                """, unsafe_allow_html=True)
-                
-                historicos = load_historicos()
-                if st.session_state.usuario not in historicos:
-                    historicos[st.session_state.usuario] = []
-                
-                historicos[st.session_state.usuario].append({
-                    "data": datetime.now().isoformat(),
-                    "origem": "upload",
-                    "arquivo": arquivo.name,
-                    "processos_count": len(processos),
-                    "dados": processos
-                })
-                
-                save_historicos(historicos)
-                
-                st.session_state.processos_carregados = processos
-                st.session_state.arquivo_nome = arquivo.name
-                
-                st.info("Vá para a aba **ANÁLISE** para visualizar e processar os dados")
-            else:
-                st.error("❌ Nenhum processo encontrado. Verifique o formato do arquivo.")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Consulta Telegram
-        st.markdown('<div class="card"><div class="card-header">📡 Consulta Telegram</div>', unsafe_allow_html=True)
-        
-        col1, col2 = st.columns(2)
         with col1:
-            uf = st.selectbox("UF", ["SP","RJ","MG","PE","BA","CE","PR","RS","SC","GO","DF","ES","AM","PA","MA","MT","MS","PB","RN","AL","SE","PI","RO","TO","AC","AP","RR"])
+            st.markdown("""
+            <div class='tab-card' style='margin-bottom: 20px;'>
+                <h3>📥 Upload .txt</h3>
+                <p>Envie arquivo com processos judiciais</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
         with col2:
-            oab = st.text_input("OAB (6 dígitos)", max_chars=6)
+            st.markdown("""
+            <div class='tab-card' style='margin-bottom: 20px;'>
+                <h3>📡 Telegram Bot</h3>
+                <p>Consulte via bot do Telegram</p>
+            </div>
+            """, unsafe_allow_html=True)
         
-        if st.button("🚀 Consultar Telegram", use_container_width=True, type="primary"):
-            # Alterado de 5 para 6 dígitos
-            if len(re.sub(r'\D', '', oab)) != 6:
-                st.error("❌ OAB deve ter 6 números")
-            else:
-                with st.spinner("🔄 Consultando..."):
-                    comando = f"/oab {uf.lower()}{re.sub(r'\D', '', oab)}"
-                    resultado = asyncio.run(buscar_arquivo_no_grupo(comando, re.sub(r'\D', '', oab)))
+        with col3:
+            st.markdown("""
+            <div class='tab-card' style='margin-bottom: 20px;'>
+                <h3>📜 Histórico</h3>
+                <p>Carregue consultas anteriores</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        tab1, tab2, tab3 = st.tabs(["📥 UPLOAD", "📡 TELEGRAM", "📜 HISTÓRICO"])
+        
+        with tab1:
+            st.markdown('<div class="card"><div class="card-header">📥 Upload de Arquivo</div>', unsafe_allow_html=True)
+            
+            arquivo = st.file_uploader("Selecione arquivo .txt", type="txt", key="upload_main")
+            
+            if arquivo is not None:
+                conteudo = arquivo.read().decode('utf-8')
+                processos = parsear_arquivo(conteudo)
+                
+                if processos:
+                    st.markdown(f"""
+                    <div class="success-msg">
+                        ✓ {len(processos)} processo(s) encontrado(s)
+                    </div>
+                    """, unsafe_allow_html=True)
                     
-                    if resultado:
-                        texto = resultado.decode('utf-8', errors='ignore')
-                        processos = parsear_arquivo(texto)
-                        
-                        if processos:
-                            historicos = load_historicos()
-                            if st.session_state.usuario not in historicos:
-                                historicos[st.session_state.usuario] = []
-                            
-                            historicos[st.session_state.usuario].append({
-                                "data": datetime.now().isoformat(),
-                                "origem": "telegram",
-                                "arquivo": f"Telegram ({uf}{re.sub(r'\D', '', oab)})",
-                                "processos_count": len(processos),
-                                "dados": processos
-                            })
-                            
-                            save_historicos(historicos)
-                            st.session_state.processos_carregados = processos
-                            st.session_state.arquivo_nome = f"Telegram ({uf}{re.sub(r'\D', '', oab)})"
-                            st.success("✅ Consulta realizada!")
-                            st.rerun()
-                    else:
-                        st.error("❌ Sem resposta do bot")
+                    historicos = load_historicos()
+                    if st.session_state.usuario not in historicos:
+                        historicos[st.session_state.usuario] = []
+                    
+                    historicos[st.session_state.usuario].append({
+                        "data": datetime.now().isoformat(),
+                        "origem": "upload",
+                        "arquivo": arquivo.name,
+                        "processos_count": len(processos),
+                        "dados": processos
+                    })
+                    
+                    save_historicos(historicos)
+                    
+                    st.session_state.processos_carregados = processos
+                    st.session_state.arquivo_nome = arquivo.name
+                    st.session_state.pagina = "analise"
+                    st.rerun()
+                else:
+                    st.error("❌ Nenhum processo encontrado")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
         
-        st.markdown('</div>', unsafe_allow_html=True)
+        with tab2:
+            st.markdown('<div class="card"><div class="card-header">📡 Consulta via Telegram</div>', unsafe_allow_html=True)
+            st.info("🔧 Funcionalidade será implementada em breve")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with tab3:
+            st.markdown('<div class="card"><div class="card-header">📜 Histórico de Consultas</div>', unsafe_allow_html=True)
+            
+            historicos = load_historicos()
+            
+            if st.session_state.usuario not in historicos or not historicos[st.session_state.usuario]:
+                st.info("📂 Nenhuma consulta no histórico")
+            else:
+                consultas = historicos[st.session_state.usuario]
+                
+                for idx, consulta in enumerate(reversed(consultas), 1):
+                    col1, col2, col3 = st.columns([2, 2, 1])
+                    
+                    with col1:
+                        data = datetime.fromisoformat(consulta['data']).strftime("%d/%m/%Y %H:%M:%S")
+                        st.write(f"**📅 {data}**")
+                    
+                    with col2:
+                        origem = "📤 Upload" if consulta['origem'] == 'upload' else "📡 Telegram"
+                        st.write(f"{origem} | {consulta['processos_count']} processos")
+                    
+                    with col3:
+                        if st.button("📂 Carregar", key=f"load_{idx}"):
+                            st.session_state.processos_carregados = consulta['dados']
+                            st.session_state.arquivo_nome = consulta.get('arquivo', 'Consulta anterior')
+                            st.session_state.pagina = "analise"
+                            st.rerun()
+            
+            st.markdown('</div>', unsafe_allow_html=True)
     
-    # ============= TAB 2: ANÁLISE =============
-    with tab2:
-        if "processos_carregados" not in st.session_state or not st.session_state.processos_carregados:
-            st.info("📂 Nenhum arquivo carregado. Use a aba **UPLOAD** para enviar um arquivo.")
+    # ============= PÁGINA: ANÁLISE =============
+    elif st.session_state.pagina == "analise":
+        if st.session_state.processos_carregados is None:
+            st.error("❌ Nenhum processo carregado")
+            if st.button("← Voltar"):
+                st.session_state.pagina = "consulta"
+                st.rerun()
         else:
             processos = st.session_state.processos_carregados
             
+            # BOTÃO VOLTAR
+            st.markdown('<div class="back-button-container">', unsafe_allow_html=True)
+            col1, col2 = st.columns([0.1, 0.9])
+            with col1:
+                if st.button("← Voltar", use_container_width=True, key="btn_voltar"):
+                    st.session_state.pagina = "consulta"
+                    st.session_state.processos_carregados = None
+                    st.session_state.processo_aberto_idx = None
+                    st.rerun()
+            with col2:
+                st.title(f"📊 Análise - {st.session_state.arquivo_nome}")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.divider()
+            
             # ============= FILTROS =============
             st.markdown('<div class="filtro-container">', unsafe_allow_html=True)
-            st.markdown('<div class="card-header" style="border: none; padding-bottom: 0;">🔍 FILTROS E BUSCA</div>', unsafe_allow_html=True)
+            st.markdown('<div class="card-header" style="border: none; padding-bottom: 0; margin-bottom: 16px;">🔍 BUSCAR E FILTRAR</div>', unsafe_allow_html=True)
             
-            col1, col2, col3 = st.columns([2, 1.5, 1])
+            col1, col2 = st.columns([2, 1])
             
             with col1:
-                termo_busca = st.text_input("🔎 Buscar (CPF, processo, advogado, termo)", placeholder="Digite para filtrar...")
+                termo_busca = st.text_input("🔎 Buscar (CPF, processo, advogado, termo)", placeholder="Digite para filtrar...", key="search_input")
             
             with col2:
-                advogados = set()
-                for p in processos:
-                    for parte in p['polo_ativo'] + p['polo_passivo']:
-                        for adv in parte['advogados']:
-                            advogados.add(adv['nome'])
-                
-                advogados_sorted = sorted(list(advogados))
-                filtro_advogado = st.selectbox("👨‍⚖️ Advogado", ["[Todos]"] + advogados_sorted)
-                if filtro_advogado == "[Todos]":
-                    filtro_advogado = None
+                mostrar_restritos = st.checkbox("🔒 Mostrar Restritos", value=False, key="show_restricted")
             
-            with col3:
-                mostrar_restritos = st.checkbox("🔒 Restritos", value=False)
-            
-            processos_filtrados = filtrar_processos(processos, termo_busca, mostrar_restritos, filtro_advogado)
+            processos_filtrados = filtrar_processos(processos, termo_busca, mostrar_restritos)
             
             st.markdown('</div>', unsafe_allow_html=True)
             
             # ============= ESTATÍSTICAS =============
             st.markdown('<div class="stats-row">', unsafe_allow_html=True)
             
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3 = st.columns(3)
             
             with col1:
                 st.markdown(f"""
@@ -874,22 +751,11 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
             
-            cpf_duplicados = detectar_cpfs_duplicados(processos_filtrados)
-            cpfs_unicos = len(cpf_duplicados)
-            
+            partes_count = sum(len(p['polo_ativo']) + len(p['polo_passivo']) for p in processos_filtrados)
             with col3:
                 st.markdown(f"""
                 <div class="stat-box" style="background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); border-left-color: #16a34a;">
-                    <div class="stat-value" style="color: #16a34a;">{cpfs_unicos}</div>
-                    <div class="stat-label">CPFs Únicos</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            partes_count = sum(len(p['polo_ativo']) + len(p['polo_passivo']) for p in processos_filtrados)
-            with col4:
-                st.markdown(f"""
-                <div class="stat-box" style="background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%); border-left-color: #ea580c;">
-                    <div class="stat-value" style="color: #ea580c;">{partes_count}</div>
+                    <div class="stat-value" style="color: #16a34a;">{partes_count}</div>
                     <div class="stat-label">Partes</div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -898,109 +764,143 @@ else:
             
             # ============= LISTA DE PROCESSOS =============
             st.markdown("---")
-            st.markdown("### 📋 PROCESSOS ENCONTRADOS")
+            st.markdown("### 📋 PROCESSOS")
             
             if not processos_filtrados:
-                st.warning("❌ Nenhum processo encontra os critérios de filtro")
+                st.warning("❌ Nenhum processo encontra os critérios")
             else:
-                for idx, p in enumerate(processos_filtrados, 1):
-                    with st.expander(f"📌 {p['numero']} - {p['classe']}", expanded=False):
+                for idx, p in enumerate(processos_filtrados):
+                    is_open = st.session_state.processo_aberto_idx == idx
+                    
+                    st.markdown(f'<div class="processo-container">', unsafe_allow_html=True)
+                    
+                    col1, col2 = st.columns([0.9, 0.1])
+                    
+                    with col1:
+                        if st.button(
+                            f"{'▼' if is_open else '▶'} {p['numero']} | {p['polo_ativo'][0]['nome'] if p['polo_ativo'] else 'N/A'}",
+                            key=f"toggle_{idx}",
+                            use_container_width=True
+                        ):
+                            if is_open:
+                                st.session_state.processo_aberto_idx = None
+                            else:
+                                st.session_state.processo_aberto_idx = idx
+                            st.rerun()
+                    
+                    with col2:
                         if p['restrito']:
-                            st.markdown('<div class="restricted-alert">🔒 PROCESSO RESTRITO - Res. 121 / Sigilo</div>', unsafe_allow_html=True)
+                            st.markdown('<span class="badge-danger">🔒</span>', unsafe_allow_html=True)
+                    
+                    # CONTEÚDO EXPANDIDO
+                    if is_open:
+                        st.markdown('<div style="margin-top: 16px; padding-top: 16px; border-top: 2px solid #e2e8f0;">', unsafe_allow_html=True)
                         
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown(f"**Tribunal:** {p['tribunal']}")
-                            st.markdown(f"**Classe:** {p['classe']}")
-                            st.markdown(f"**Assunto:** {p['assunto']}")
-                            st.markdown(f"**Valor:** {p['valor']}")
-                        with col2:
-                            st.markdown(f"**Órgão Julgador:** {p['orgao_julgador']}")
-                            st.markdown(f"**Data Início:** {p['data_inicio']}")
-                            if p['link']:
-                                st.link_button("🔗 Abrir Processo", p['link'], use_container_width=True)
+                        # Informações básicas
+                        st.markdown('<div class="info-group">', unsafe_allow_html=True)
+                        st.markdown(f'<div class="info-label">Tribunal</div><div class="info-value">{p["tribunal"]}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="info-label" style="margin-top: 8px;">Classe</div><div class="info-value">{p["classe"]}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="info-label" style="margin-top: 8px;">Assunto</div><div class="info-value">{p["assunto"]}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="info-label" style="margin-top: 8px;">Órgão Julgador</div><div class="info-value">{p["orgao_julgador"]}</div>', unsafe_allow_html=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
                         
-                        st.markdown("---")
+                        if p['link']:
+                            st.markdown(f'<a href="{p["link"]}" target="_blank" style="display: inline-block; padding: 8px 16px; background: #1e3a8a; color: white; border-radius: 6px; text-decoration: none; font-weight: 600; margin-top: 12px;">🔗 Abrir Processo</a>', unsafe_allow_html=True)
                         
                         # POLO ATIVO
-                        st.markdown("#### 👤 Polo Ativo")
-                        for parte in p['polo_ativo']:
-                            with st.container(border=True):
-                                st.write(f"**{parte['nome']}**")
-                                if parte['cpf']:
-                                    col_doc, col_copy = st.columns([3, 1])
-                                    with col_doc:
-                                        st.code(parte['cpf'])
-                                    with col_copy:
-                                        if st.button("📋", key=f"copy_doc_at_{idx}_{parte['nome']}", use_container_width=True):
-                                            st.toast("✅ Copiado!")
-                                
-                                if parte['advogados']:
-                                    st.write("**Advogados:**")
-                                    for adv in parte['advogados']:
-                                        st.write(f"• {adv['nome']} - CPF: {formatar_cpf(adv['cpf'])}")
+                        st.markdown('<div class="polo-section">', unsafe_allow_html=True)
+                        st.markdown('<div class="card-header" style="border: none; font-size: 15px;">📍 POLO ATIVO</div>', unsafe_allow_html=True)
                         
-                        # POLO PASSIVO
+                        for parte in p['polo_ativo']:
+                            st.markdown('<div class="parte-item">', unsafe_allow_html=True)
+                            st.markdown(f'<div class="info-label">Parte</div><div class="info-value">{parte["nome"]}</div>', unsafe_allow_html=True)
+                            
+                            if parte['advogados']:
+                                st.markdown('<div class="info-label" style="margin-top: 8px;">Advogados</div>', unsafe_allow_html=True)
+                                for adv in parte['advogados']:
+                                    col_a, col_b = st.columns([4, 1])
+                                    with col_a:
+                                        st.markdown(f'<div class="info-value">{adv["nome"]}</div>', unsafe_allow_html=True)
+                                    with col_b:
+                                        if adv['cpf']:
+                                            if st.button("📋", key=f"copy_adv_{adv['cpf']}_ativo", help="Copiar CPF", use_container_width=True):
+                                                st.session_state.clipboard = formatar_cpf(adv['cpf'])
+                                                st.success(f"✓ {formatar_cpf(adv['cpf'])}")
+                                    st.markdown(f'<div class="info-value" style="font-size: 12px; color: #64748b; margin-top: 4px;">{formatar_cpf(adv["cpf"])}</div>', unsafe_allow_html=True)
+                            
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # POLO PASSIVO (RECOLHIDO)
                         if p['polo_passivo']:
-                            st.markdown("#### 🏛️ Polo Passivo")
-                            for parte in p['polo_passivo']:
-                                with st.container(border=True):
-                                    st.write(f"**{parte['nome']}**")
-                                    if parte['cpf']:
-                                        col_doc, col_copy = st.columns([3, 1])
-                                        with col_doc:
-                                            st.code(parte['cpf'])
-                                        with col_copy:
-                                            if st.button("📋", key=f"copy_doc_pass_{idx}_{parte['nome']}", use_container_width=True):
-                                                st.toast("✅ Copiado!")
+                            with st.expander("📍 POLO PASSIVO", expanded=False):
+                                for parte in p['polo_passivo']:
+                                    st.markdown('<div class="parte-item">', unsafe_allow_html=True)
+                                    st.markdown(f'<div class="info-label">Parte</div><div class="info-value">{parte["nome"]}</div>', unsafe_allow_html=True)
                                     
                                     if parte['advogados']:
-                                        st.write("**Advogados:**")
+                                        st.markdown('<div class="info-label" style="margin-top: 8px;">Advogados</div>', unsafe_allow_html=True)
                                         for adv in parte['advogados']:
-                                            st.write(f"• {adv['nome']} - CPF: {formatar_cpf(adv['cpf'])}")
+                                            col_a, col_b = st.columns([4, 1])
+                                            with col_a:
+                                                st.markdown(f'<div class="info-value">{adv["nome"]}</div>', unsafe_allow_html=True)
+                                            with col_b:
+                                                if adv['cpf']:
+                                                    if st.button("📋", key=f"copy_adv_{adv['cpf']}_passivo", help="Copiar CPF", use_container_width=True):
+                                                        st.session_state.clipboard = formatar_cpf(adv['cpf'])
+                                                        st.success(f"✓ {formatar_cpf(adv['cpf'])}")
+                                            st.markdown(f'<div class="info-value" style="font-size: 12px; color: #64748b; margin-top: 4px;">{formatar_cpf(adv["cpf"])}</div>', unsafe_allow_html=True)
+                                    
+                                    st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    
+                    st.markdown('</div>', unsafe_allow_html=True)
             
             # ============= EXPORTAÇÃO =============
             st.markdown("---")
-            st.markdown("### 📥 EXPORTAÇÃO DE DADOS")
+            st.markdown("### 📥 EXPORTAÇÃO")
             
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                if st.button("📊 Copiar Todos CPFs", use_container_width=True):
+                if st.button("📊 Copiar CPFs", use_container_width=True):
                     cpfs = []
                     for p in processos_filtrados:
-                        if not p['restrito']:
-                            for parte in p['polo_ativo'] + p['polo_passivo']:
-                                for adv in parte['advogados']:
-                                    if adv['cpf']:
-                                        cpfs.append(formatar_cpf(adv['cpf']))
+                        for parte in p['polo_ativo'] + p['polo_passivo']:
+                            for adv in parte['advogados']:
+                                if adv['cpf']:
+                                    cpfs.append(formatar_cpf(adv['cpf']))
                     
                     if cpfs:
+                        st.success(f"✓ {len(cpfs)} CPFs")
                         st.code("\n".join(cpfs))
             
             with col2:
-                if st.button("👨‍⚖️ Lista Advogados Únicos", use_container_width=True):
+                if st.button("👨‍⚖️ Advogados Únicos", use_container_width=True):
                     advogados_unicos = {}
                     for p in processos_filtrados:
-                        if not p['restrito']:
-                            for parte in p['polo_ativo'] + p['polo_passivo']:
-                                for adv in parte['advogados']:
-                                    if adv['cpf']:
-                                        advogados_unicos[adv['cpf']] = adv['nome']
+                        for parte in p['polo_ativo'] + p['polo_passivo']:
+                            for adv in parte['advogados']:
+                                if adv['cpf']:
+                                    advogados_unicos[adv['cpf']] = adv['nome']
                     
+                    st.markdown("**Advogados Únicos:**")
                     for cpf, nome in sorted(advogados_unicos.items()):
                         st.code(f"{formatar_cpf(cpf)} | {nome}")
             
             with col3:
-                if st.button("📄 Gerar .txt Filtrado", use_container_width=True):
-                    txt = "RELATÓRIO FILTRADO - PAINEL SUPREMO DO SETE\n"
+                if st.button("📄 Download TXT", use_container_width=True):
+                    txt = "RELATÓRIO - PAINEL SUPREMO DO SETE\n"
                     txt += "=" * 80 + "\n\n"
                     
                     for p in processos_filtrados:
                         if not p['restrito']:
                             txt += f"PROCESSO: {p['numero']}\n"
                             txt += f"TRIBUNAL: {p['tribunal']}\n"
-                            txt += f"CLASSE: {p['classe']}\n\n"
+                            txt += f"CLASSE: {p['classe']}\n"
+                            txt += f"ASSUNTO: {p['assunto']}\n\n"
                             
                             txt += "POLO ATIVO:\n"
                             for parte in p['polo_ativo']:
@@ -1018,47 +918,53 @@ else:
                             txt += "\n" + "-" * 80 + "\n\n"
                     
                     st.download_button(
-                        "⬇️ Download Relatório",
+                        "⬇️ Download",
                         txt,
-                        f"processos_filtrados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                        "text/plain",
-                        use_container_width=True
+                        f"processos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                        "text/plain"
                     )
     
-    # ============= TAB 3: HISTÓRICO =============
-    with tab3:
-        st.markdown('<div class="card"><div class="card-header">📜 Histórico de Consultas</div>', unsafe_allow_html=True)
+    # ============= PÁGINA: ADMIN =============
+    elif st.session_state.pagina == "admin":
+        if st.button("← Voltar"):
+            st.session_state.pagina = "consulta"
+            st.rerun()
         
-        historicos = load_historicos()
+        st.title("⚙️ ADMIN PANEL")
+        st.divider()
         
-        if st.session_state.usuario not in historicos or not historicos[st.session_state.usuario]:
-            st.info("📂 Nenhuma consulta no histórico")
-        else:
-            consultas = historicos[st.session_state.usuario]
+        acao = st.radio("Ação", ["Criar Usuário", "Deletar Usuário", "Listar Usuários"])
+        
+        if acao == "Criar Usuário":
+            novo_user = st.text_input("Novo usuário")
+            nova_senha = st.text_input("Senha", type="password")
             
-            for idx, consulta in enumerate(reversed(consultas), 1):
-                with st.container(border=True):
-                    col1, col2, col3 = st.columns([2, 2, 1])
-                    
-                    with col1:
-                        data = datetime.fromisoformat(consulta['data']).strftime("%d/%m/%Y %H:%M:%S")
-                        st.markdown(f"**📅 {data}**")
-                    
-                    with col2:
-                        origem = "📤 Upload" if consulta['origem'] == 'upload' else "📡 Telegram"
-                        st.markdown(f"{origem} | {consulta['processos_count']} processos")
-                    
-                    with col3:
-                        if st.button("📂 Carregar", key=f"load_{idx}", use_container_width=True):
-                            st.session_state.processos_carregados = consulta['dados']
-                            st.session_state.arquivo_nome = consulta.get('arquivo', 'Consulta anterior')
-                            st.rerun()
+            if st.button("✅ CRIAR"):
+                usuarios = load_usuarios()
+                if novo_user in usuarios:
+                    st.error("Usuário já existe")
+                else:
+                    usuarios[novo_user] = hash_password(nova_senha)
+                    save_usuarios(usuarios)
+                    st.success(f"✓ Usuário '{novo_user}' criado")
         
-        st.markdown('</div>', unsafe_allow_html=True)
+        elif acao == "Deletar Usuário":
+            usuarios = load_usuarios()
+            user_list = [u for u in usuarios.keys() if u != "admin"]
+            
+            if user_list:
+                user_delete = st.selectbox("Selecione usuário", user_list)
+                
+                if st.button("❌ DELETAR"):
+                    del usuarios[user_delete]
+                    save_usuarios(usuarios)
+                    st.success(f"✓ Usuário '{user_delete}' deletado")
+            else:
+                st.info("Apenas admin existe")
         
-        if historicos.get(st.session_state.usuario):
-            if st.button("🗑️ LIMPAR TODO HISTÓRICO", use_container_width=True):
-                historicos[st.session_state.usuario] = []
-                save_historicos(historicos)
-                st.success("✓ Histórico limpo")
-                st.rerun()
+        elif acao == "Listar Usuários":
+            usuarios = load_usuarios()
+            st.write("**Usuários cadastrados:**")
+            for u in usuarios.keys():
+                badge = "🔒 ADMIN" if u == "admin" else "👤"
+                st.write(f"{badge} {u}")
