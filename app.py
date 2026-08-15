@@ -5,6 +5,9 @@ from datetime import datetime, timedelta
 import hashlib
 import re
 from pathlib import Path
+import asyncio
+from telethon import TelegramClient
+from telethon.sessions import StringSession
 
 # ============= CONFIG =============
 st.set_page_config(
@@ -13,6 +16,24 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ============= CARREGAR SECRETS =============
+try:
+    SENHA_APP = st.secrets["SENHA_APP"]
+    API_ID = int(st.secrets["API_ID"])
+    API_HASH = st.secrets["API_HASH"]
+    BOT_USERNAME = st.secrets.get("BOT_USERNAME", "")
+    GRUPO_ID = int(st.secrets.get("GRUPO_IDENTIFICADOR", 0))
+    STRING_SESSION = st.secrets.get("TELEGRAM_STRING_SESSION", "")
+except KeyError as e:
+    st.error(f"⚠️ Configure a chave {e} no secrets.toml")
+    st.info("""
+    📋 **Como configurar:**
+    1. Crie o arquivo `.streamlit/secrets.toml`
+    2. Adicione as chaves necessárias
+    3. Reinicie o app
+    """)
+    st.stop()
 
 # ============= ESTILOS CSS =============
 st.markdown("""
@@ -370,16 +391,81 @@ def criar_sessao(username):
     save_sessoes(sessoes)
 
 def limpar_sessoes_expiradas():
-    sessoes = load_sessoes()
-    agora = datetime.now()
-    sessoes_ativas = {}
-    
-    for username, sessao in sessoes.items():
-        expira = datetime.fromisoformat(sessao["expira"])
-        if expira > agora:
-            sessoes_ativas[username] = sessao
-    
-    save_sessoes(sessoes_ativas)
+    """Remove sessões expiradas - CORRIGIDO"""
+    try:
+        sessoes = load_sessoes()
+        
+        if not sessoes:
+            return
+        
+        agora = datetime.now()
+        sessoes_ativas = {}
+        
+        for username, sessao in sessoes.items():
+            try:
+                # Verificar se é um dicionário
+                if not isinstance(sessao, dict):
+                    continue
+                
+                # Usar .get() para evitar KeyError
+                expira_str = sessao.get("expira", "")
+                
+                if not expira_str:
+                    continue
+                
+                expira = datetime.fromisoformat(expira_str)
+                
+                if expira > agora:
+                    sessoes_ativas[username] = sessao
+            except (ValueError, TypeError, KeyError, AttributeError):
+                # Sessão inválida, remover
+                continue
+        
+        # Salvar apenas se houve mudança
+        if len(sessoes_ativas) != len(sessoes):
+            save_sessoes(sessoes_ativas)
+    except Exception:
+        # Se tudo falhar, apenas ignora
+        pass
+
+# ============= FUNÇÃO DE CONSULTA TELEGRAM =============
+async def buscar_arquivo_no_grupo(comando_oab, identificador_busca):
+    """Busca arquivo no grupo do Telegram"""
+    try:
+        session = StringSession(STRING_SESSION) if STRING_SESSION else 'sessao_telegram'
+        client = TelegramClient(session, API_ID, API_HASH)
+        
+        await client.start()
+        grupo = await client.get_entity(GRUPO_ID)
+        
+        mensagem_enviada = await client.send_message(grupo, comando_oab)
+        
+        arquivo_bytes = None
+        for _ in range(40):
+            await asyncio.sleep(1)
+            async for message in client.iter_messages(grupo, limit=15):
+                sender_name = getattr(message.sender, 'username', '') if message.sender else ''
+                
+                if sender_name == BOT_USERNAME or BOT_USERNAME in str(message.sender_id):
+                    if message.file and message.id > mensagem_enviada.id:
+                        eh_resposta_direta = (message.reply_to_msg_id == mensagem_enviada.id)
+                        texto_mensagem = str(message.text).lower() if message.text else ""
+                        tem_oab_no_texto = (identificador_busca.lower() in texto_mensagem)
+                        nome_arquivo = str(message.file.name).lower() if hasattr(message.file, 'name') and message.file.name else ""
+                        tem_oab_no_arquivo = (identificador_busca.lower() in nome_arquivo)
+                        
+                        if eh_resposta_direta or tem_oab_no_texto or tem_oab_no_arquivo:
+                            arquivo_bytes = await client.download_media(message.file, file=bytes)
+                            break
+            
+            if arquivo_bytes:
+                break
+        
+        await client.disconnect()
+        return arquivo_bytes
+    except Exception as e:
+        st.error(f"Erro Telegram: {e}")
+        return None
 
 # ============= PARSE DO ARQUIVO =============
 def extrair_cpf(texto):
@@ -406,12 +492,13 @@ def extrair_processo(texto):
     }
     
     modo = None
+    parte_atual = None
     
     for i, line in enumerate(lines):
         line = line.strip()
         
         # Detectar restrição
-        if 'ocultada' in line.lower() or 'res. 121' in line.lower():
+        if 'ocultada' in line.lower() or 'res. 121' in line.lower() or 'segredo' in line.lower():
             processo['restrito'] = True
         
         if line.startswith('PROCESSO:'):
@@ -430,26 +517,30 @@ def extrair_processo(texto):
             processo['data_inicio'] = line.replace('DATA INICIO:', '').strip()
         elif line.startswith('ORGAO JULGADOR:'):
             processo['orgao_julgador'] = line.replace('ORGAO JULGADOR:', '').strip()
-        elif line.startswith('ULTIMA MOVIMENTACAO:'):
-            modo = 'movimentacao'
         elif line.startswith('POLO ATIVO:'):
             modo = 'polo_ativo'
         elif line.startswith('POLO PASSIVO:'):
             modo = 'polo_passivo'
-        elif line.startswith('-') and line.startswith('- NOME:'):
+        elif line.startswith('- NOME:'):
             nome = line.replace('- NOME:', '').strip()
+            parte_atual = {'nome': nome, 'cpf': None, 'advogados': []}
             if modo == 'polo_ativo':
-                processo['polo_ativo'].append({'nome': nome, 'cpf': None, 'advogados': []})
+                processo['polo_ativo'].append(parte_atual)
             elif modo == 'polo_passivo':
-                processo['polo_passivo'].append({'nome': nome, 'cpf': None, 'advogados': []})
-        elif line.startswith('- ADVOGADO:') or line.startswith('- ') and 'ADVOGADO:' in line:
+                processo['polo_passivo'].append(parte_atual)
+        elif line.startswith('- DOC:'):
+            doc = line.replace('- DOC:', '').strip()
+            if parte_atual:
+                parte_atual['cpf'] = doc
+        elif 'ADVOGADO:' in line:
             cpf = extrair_cpf(line)
-            nome_adv = re.sub(r'\s*\(CPF:\s*\d+\)\s*', '', line.replace('- ADVOGADO:', '').replace('- ', '').replace('Advogado:', '')).strip()
+            # Extrair nome do advogado
+            nome_adv = re.sub(r'\s*\(CPF:\s*\d+\)\s*', '', line)
+            nome_adv = nome_adv.replace('- ADVOGADO:', '').replace('Advogado:', '').strip()
+            nome_adv = nome_adv.strip(';').strip()
             
-            if modo == 'polo_ativo' and processo['polo_ativo']:
-                processo['polo_ativo'][-1]['advogados'].append({'nome': nome_adv, 'cpf': cpf})
-            elif modo == 'polo_passivo' and processo['polo_passivo']:
-                processo['polo_passivo'][-1]['advogados'].append({'nome': nome_adv, 'cpf': cpf})
+            if parte_atual:
+                parte_atual['advogados'].append({'nome': nome_adv, 'cpf': cpf})
     
     return processo if processo['numero'] else None
 
@@ -458,10 +549,11 @@ def parsear_arquivo(conteudo):
     blocos = conteudo.split('----------------------------------------------')
     processos = []
     
-    for bloco in blocos[1:]:
-        p = extrair_processo(bloco)
-        if p:
-            processos.append(p)
+    for bloco in blocos:
+        if bloco.strip():
+            p = extrair_processo(bloco)
+            if p:
+                processos.append(p)
     
     return processos
 
@@ -562,8 +654,9 @@ if not st.session_state.autenticado:
         if st.button("🔓 ACESSAR", use_container_width=True, type="primary"):
             usuarios = load_usuarios()
             
+            # Usar senha do secrets, NUNCA hardcoded
             if not usuarios:
-                usuarios["admin"] = hash_password("admin123")
+                usuarios["admin"] = hash_password(SENHA_APP)
                 save_usuarios(usuarios)
             
             if usuario in usuarios and usuarios[usuario] == hash_password(senha):
@@ -680,6 +773,50 @@ else:
                 st.error("❌ Nenhum processo encontrado. Verifique o formato do arquivo.")
         
         st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Consulta Telegram
+        st.markdown('<div class="card"><div class="card-header">📡 Consulta Telegram</div>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            uf = st.selectbox("UF", ["SP","RJ","MG","PE","BA","CE","PR","RS","SC","GO","DF","ES","AM","PA","MA","MT","MS","PB","RN","AL","SE","PI","RO","TO","AC","AP","RR"])
+        with col2:
+            oab = st.text_input("OAB (5 dígitos)", max_chars=5)
+        
+        if st.button("🚀 Consultar Telegram", use_container_width=True, type="primary"):
+            if len(re.sub(r'\D', '', oab)) != 5:
+                st.error("❌ OAB deve ter 5 números")
+            else:
+                with st.spinner("🔄 Consultando..."):
+                    comando = f"/oab {uf.lower()}{re.sub(r'\D', '', oab)}"
+                    resultado = asyncio.run(buscar_arquivo_no_grupo(comando, re.sub(r'\D', '', oab)))
+                    
+                    if resultado:
+                        texto = resultado.decode('utf-8', errors='ignore')
+                        processos = parsear_arquivo(texto)
+                        
+                        if processos:
+                            historicos = load_historicos()
+                            if st.session_state.usuario not in historicos:
+                                historicos[st.session_state.usuario] = []
+                            
+                            historicos[st.session_state.usuario].append({
+                                "data": datetime.now().isoformat(),
+                                "origem": "telegram",
+                                "arquivo": f"Telegram ({uf}{re.sub(r'\D', '', oab)})",
+                                "processos_count": len(processos),
+                                "dados": processos
+                            })
+                            
+                            save_historicos(historicos)
+                            st.session_state.processos_carregados = processos
+                            st.session_state.arquivo_nome = f"Telegram ({uf}{re.sub(r'\D', '', oab)})"
+                            st.success("✅ Consulta realizada!")
+                            st.rerun()
+                    else:
+                        st.error("❌ Sem resposta do bot")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # ============= TAB 2: ANÁLISE =============
     with tab2:
@@ -710,11 +847,7 @@ else:
                     filtro_advogado = None
             
             with col3:
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    mostrar_restritos = st.checkbox("🔒 Restritos", value=False)
-                with col_b:
-                    col_ba, col_bb = st.columns(2)
+                mostrar_restritos = st.checkbox("🔒 Restritos", value=False)
             
             processos_filtrados = filtrar_processos(processos, termo_busca, mostrar_restritos, filtro_advogado)
             
@@ -772,87 +905,61 @@ else:
                 st.warning("❌ Nenhum processo encontra os critérios de filtro")
             else:
                 for idx, p in enumerate(processos_filtrados, 1):
-                    st.markdown(f'<div class="processo-container">', unsafe_allow_html=True)
-                    
-                    # Header
-                    col1, col2, col3 = st.columns([2, 2, 1])
-                    
-                    with col1:
-                        st.markdown(f'<div class="processo-numero">#{idx} {p["numero"]}</div>', unsafe_allow_html=True)
-                    
-                    with col2:
+                    with st.expander(f"📌 {p['numero']} - {p['classe']}", expanded=False):
                         if p['restrito']:
-                            st.markdown('<span class="badge badge-danger">🔒 Res. 121 / Sigilo</span>', unsafe_allow_html=True)
-                    
-                    with col3:
-                        if st.button("📖 Abrir", key=f"open_{idx}", use_container_width=True):
-                            st.session_state[f"expand_{idx}"] = not st.session_state.get(f"expand_{idx}", False)
-                    
-                    # Conteúdo expandido
-                    if st.session_state.get(f"expand_{idx}", False):
-                        # Informações básicas
-                        st.markdown('<div class="info-group">', unsafe_allow_html=True)
-                        st.markdown(f'<div class="info-label">Tribunal</div><div class="info-value">{p["tribunal"]}</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="info-label" style="margin-top: 8px;">Classe</div><div class="info-value">{p["classe"]}</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="info-label" style="margin-top: 8px;">Assunto</div><div class="info-value">{p["assunto"]}</div>', unsafe_allow_html=True)
-                        st.markdown(f'<div class="info-label" style="margin-top: 8px;">Órgão Julgador</div><div class="info-value">{p["orgao_julgador"]}</div>', unsafe_allow_html=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
+                            st.markdown('<div class="restricted-alert">🔒 PROCESSO RESTRITO - Res. 121 / Sigilo</div>', unsafe_allow_html=True)
                         
-                        if p['link']:
-                            st.markdown(f'<a href="{p["link"]}" target="_blank" style="display: inline-block; padding: 8px 16px; background: #1e3a8a; color: white; border-radius: 6px; text-decoration: none; font-weight: 600; margin-top: 12px;">🔗 Abrir Processo no STJ</a>', unsafe_allow_html=True)
+                        # Informações básicas
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown(f"**Tribunal:** {p['tribunal']}")
+                            st.markdown(f"**Classe:** {p['classe']}")
+                            st.markdown(f"**Assunto:** {p['assunto']}")
+                            st.markdown(f"**Valor:** {p['valor']}")
+                        with col2:
+                            st.markdown(f"**Órgão Julgador:** {p['orgao_julgador']}")
+                            st.markdown(f"**Data Início:** {p['data_inicio']}")
+                            if p['link']:
+                                st.link_button("🔗 Abrir Processo", p['link'], use_container_width=True)
+                        
+                        st.markdown("---")
                         
                         # POLO ATIVO
-                        st.markdown('<div class="polo-section">', unsafe_allow_html=True)
-                        st.markdown('<div class="card-header" style="border: none; font-size: 16px;">📍 POLO ATIVO</div>', unsafe_allow_html=True)
-                        
+                        st.markdown("#### 👤 Polo Ativo")
                         for parte in p['polo_ativo']:
-                            st.markdown('<div class="parte-item">', unsafe_allow_html=True)
-                            st.markdown(f'<div class="info-label">Parte</div><div class="info-value">{parte["nome"]}</div>', unsafe_allow_html=True)
-                            
-                            if parte['advogados']:
-                                st.markdown('<div class="info-label" style="margin-top: 8px;">Advogados</div>', unsafe_allow_html=True)
-                                for adv in parte['advogados']:
-                                    col_a, col_b = st.columns([4, 1])
-                                    with col_a:
-                                        st.markdown(f'<div class="info-value">{adv["nome"]}</div>', unsafe_allow_html=True)
-                                    with col_b:
-                                        if adv['cpf']:
-                                            if st.button("📋", key=f"copy_adv_{adv['cpf']}_ativo", help="Copiar CPF"):
-                                                st.session_state.clipboard = formatar_cpf(adv['cpf'])
-                                                st.success(f"✓ Copiado: {formatar_cpf(adv['cpf'])}")
-                                    st.markdown(f'<div class="info-value" style="font-size: 12px; color: #64748b; margin-top: 4px;">{formatar_cpf(adv["cpf"])}</div>', unsafe_allow_html=True)
-                            
-                            st.markdown('</div>', unsafe_allow_html=True)
-                        
-                        st.markdown('</div>', unsafe_allow_html=True)
+                            with st.container(border=True):
+                                st.write(f"**{parte['nome']}**")
+                                if parte['cpf']:
+                                    col_doc, col_copy = st.columns([3, 1])
+                                    with col_doc:
+                                        st.code(parte['cpf'])
+                                    with col_copy:
+                                        if st.button("📋", key=f"copy_doc_at_{idx}_{parte['nome']}", use_container_width=True):
+                                            st.toast("✅ Copiado!")
+                                
+                                if parte['advogados']:
+                                    st.write("**Advogados:**")
+                                    for adv in parte['advogados']:
+                                        st.write(f"• {adv['nome']} - CPF: {formatar_cpf(adv['cpf'])}")
                         
                         # POLO PASSIVO
                         if p['polo_passivo']:
-                            st.markdown('<div class="polo-section">', unsafe_allow_html=True)
-                            st.markdown('<div class="card-header" style="border: none; font-size: 16px;">📍 POLO PASSIVO</div>', unsafe_allow_html=True)
-                            
+                            st.markdown("#### 🏛️ Polo Passivo")
                             for parte in p['polo_passivo']:
-                                st.markdown('<div class="parte-item">', unsafe_allow_html=True)
-                                st.markdown(f'<div class="info-label">Parte</div><div class="info-value">{parte["nome"]}</div>', unsafe_allow_html=True)
-                                
-                                if parte['advogados']:
-                                    st.markdown('<div class="info-label" style="margin-top: 8px;">Advogados</div>', unsafe_allow_html=True)
-                                    for adv in parte['advogados']:
-                                        col_a, col_b = st.columns([4, 1])
-                                        with col_a:
-                                            st.markdown(f'<div class="info-value">{adv["nome"]}</div>', unsafe_allow_html=True)
-                                        with col_b:
-                                            if adv['cpf']:
-                                                if st.button("📋", key=f"copy_adv_{adv['cpf']}_passivo", help="Copiar CPF"):
-                                                    st.session_state.clipboard = formatar_cpf(adv['cpf'])
-                                                    st.success(f"✓ Copiado: {formatar_cpf(adv['cpf'])}")
-                                        st.markdown(f'<div class="info-value" style="font-size: 12px; color: #64748b; margin-top: 4px;">{formatar_cpf(adv["cpf"])}</div>', unsafe_allow_html=True)
-                                
-                                st.markdown('</div>', unsafe_allow_html=True)
-                            
-                            st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
+                                with st.container(border=True):
+                                    st.write(f"**{parte['nome']}**")
+                                    if parte['cpf']:
+                                        col_doc, col_copy = st.columns([3, 1])
+                                        with col_doc:
+                                            st.code(parte['cpf'])
+                                        with col_copy:
+                                            if st.button("📋", key=f"copy_doc_pass_{idx}_{parte['nome']}", use_container_width=True):
+                                                st.toast("✅ Copiado!")
+                                    
+                                    if parte['advogados']:
+                                        st.write("**Advogados:**")
+                                        for adv in parte['advogados']:
+                                            st.write(f"• {adv['nome']} - CPF: {formatar_cpf(adv['cpf'])}")
             
             # ============= EXPORTAÇÃO =============
             st.markdown("---")
@@ -864,31 +971,30 @@ else:
                 if st.button("📊 Copiar Todos CPFs", use_container_width=True):
                     cpfs = []
                     for p in processos_filtrados:
-                        for parte in p['polo_ativo'] + p['polo_passivo']:
-                            for adv in parte['advogados']:
-                                if adv['cpf']:
-                                    cpfs.append(formatar_cpf(adv['cpf']))
+                        if not p['restrito']:
+                            for parte in p['polo_ativo'] + p['polo_passivo']:
+                                for adv in parte['advogados']:
+                                    if adv['cpf']:
+                                        cpfs.append(formatar_cpf(adv['cpf']))
                     
                     if cpfs:
-                        st.session_state.clipboard_cpfs = "\n".join(cpfs)
-                        st.success(f"✓ {len(cpfs)} CPFs copiados para clipboard")
                         st.code("\n".join(cpfs))
             
             with col2:
                 if st.button("👨‍⚖️ Lista Advogados Únicos", use_container_width=True):
                     advogados_unicos = {}
                     for p in processos_filtrados:
-                        for parte in p['polo_ativo'] + p['polo_passivo']:
-                            for adv in parte['advogados']:
-                                if adv['cpf']:
-                                    advogados_unicos[adv['cpf']] = adv['nome']
+                        if not p['restrito']:
+                            for parte in p['polo_ativo'] + p['polo_passivo']:
+                                for adv in parte['advogados']:
+                                    if adv['cpf']:
+                                        advogados_unicos[adv['cpf']] = adv['nome']
                     
-                    st.markdown("**Advogados Únicos:**")
                     for cpf, nome in sorted(advogados_unicos.items()):
                         st.code(f"{formatar_cpf(cpf)} | {nome}")
             
             with col3:
-                if st.button("📄 Download .txt Filtrado", use_container_width=True):
+                if st.button("📄 Gerar .txt Filtrado", use_container_width=True):
                     txt = "RELATÓRIO FILTRADO - PAINEL SUPREMO DO SETE\n"
                     txt += "=" * 80 + "\n\n"
                     
@@ -896,8 +1002,7 @@ else:
                         if not p['restrito']:
                             txt += f"PROCESSO: {p['numero']}\n"
                             txt += f"TRIBUNAL: {p['tribunal']}\n"
-                            txt += f"CLASSE: {p['classe']}\n"
-                            txt += f"ASSUNTO: {p['assunto']}\n\n"
+                            txt += f"CLASSE: {p['classe']}\n\n"
                             
                             txt += "POLO ATIVO:\n"
                             for parte in p['polo_ativo']:
@@ -918,7 +1023,8 @@ else:
                         "⬇️ Download Relatório",
                         txt,
                         f"processos_filtrados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                        "text/plain"
+                        "text/plain",
+                        use_container_width=True
                     )
     
     # ============= TAB 3: HISTÓRICO =============
@@ -933,26 +1039,27 @@ else:
             consultas = historicos[st.session_state.usuario]
             
             for idx, consulta in enumerate(reversed(consultas), 1):
-                col1, col2, col3 = st.columns([2, 2, 1])
-                
-                with col1:
-                    data = datetime.fromisoformat(consulta['data']).strftime("%d/%m/%Y %H:%M:%S")
-                    st.markdown(f"**📅 {data}**")
-                
-                with col2:
-                    origem = "📤 Upload" if consulta['origem'] == 'upload' else "📡 Telegram"
-                    st.markdown(f"{origem} | {consulta['processos_count']} processos")
-                
-                with col3:
-                    if st.button("📂 Carregar", key=f"load_{idx}"):
-                        st.session_state.processos_carregados = consulta['dados']
-                        st.session_state.arquivo_nome = consulta.get('arquivo', 'Consulta anterior')
-                        st.switch_to("📊 ANÁLISE")
+                with st.container(border=True):
+                    col1, col2, col3 = st.columns([2, 2, 1])
+                    
+                    with col1:
+                        data = datetime.fromisoformat(consulta['data']).strftime("%d/%m/%Y %H:%M:%S")
+                        st.markdown(f"**📅 {data}**")
+                    
+                    with col2:
+                        origem = "📤 Upload" if consulta['origem'] == 'upload' else "📡 Telegram"
+                        st.markdown(f"{origem} | {consulta['processos_count']} processos")
+                    
+                    with col3:
+                        if st.button("📂 Carregar", key=f"load_{idx}", use_container_width=True):
+                            st.session_state.processos_carregados = consulta['dados']
+                            st.session_state.arquivo_nome = consulta.get('arquivo', 'Consulta anterior')
+                            st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
         
         if historicos.get(st.session_state.usuario):
-            if st.button("🗑️ LIMPAR TODO HISTÓRICO"):
+            if st.button("🗑️ LIMPAR TODO HISTÓRICO", use_container_width=True):
                 historicos[st.session_state.usuario] = []
                 save_historicos(historicos)
                 st.success("✓ Histórico limpo")
