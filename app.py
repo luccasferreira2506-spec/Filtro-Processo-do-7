@@ -403,11 +403,9 @@ def limpar_sessoes_expiradas():
         
         for username, sessao in sessoes.items():
             try:
-                # Verificar se é um dicionário
                 if not isinstance(sessao, dict):
                     continue
                 
-                # Usar .get() para evitar KeyError
                 expira_str = sessao.get("expira", "")
                 
                 if not expira_str:
@@ -418,14 +416,11 @@ def limpar_sessoes_expiradas():
                 if expira > agora:
                     sessoes_ativas[username] = sessao
             except (ValueError, TypeError, KeyError, AttributeError):
-                # Sessão inválida, remover
                 continue
         
-        # Salvar apenas se houve mudança
         if len(sessoes_ativas) != len(sessoes):
             save_sessoes(sessoes_ativas)
     except Exception:
-        # Se tudo falhar, apenas ignora
         pass
 
 # ============= FUNÇÃO DE CONSULTA TELEGRAM =============
@@ -494,7 +489,7 @@ def extrair_processo(texto):
     modo = None
     parte_atual = None
     
-    for i, line in enumerate(lines):
+    for line in lines:
         line = line.strip()
         
         # Detectar restrição
@@ -534,7 +529,6 @@ def extrair_processo(texto):
                 parte_atual['cpf'] = doc
         elif 'ADVOGADO:' in line:
             cpf = extrair_cpf(line)
-            # Extrair nome do advogado
             nome_adv = re.sub(r'\s*\(CPF:\s*\d+\)\s*', '', line)
             nome_adv = nome_adv.replace('- ADVOGADO:', '').replace('Advogado:', '').strip()
             nome_adv = nome_adv.strip(';').strip()
@@ -577,11 +571,9 @@ def filtrar_processos(processos, termo_busca, mostrar_restritos, filtro_advogado
     resultado = []
     
     for p in processos:
-        # Filtro de restritos
         if p['restrito'] and not mostrar_restritos:
             continue
         
-        # Filtro de advogado
         if filtro_advogado:
             encontrou = False
             for parte in p['polo_ativo'] + p['polo_passivo']:
@@ -592,7 +584,6 @@ def filtrar_processos(processos, termo_busca, mostrar_restritos, filtro_advogado
             if not encontrou:
                 continue
         
-        # Busca geral
         if termo_busca:
             termo = termo_busca.lower()
             encontrou = (
@@ -636,6 +627,16 @@ if "autenticado" not in st.session_state:
 if not st.session_state.autenticado:
     limpar_sessoes_expiradas()
     
+    # ============= AUTO-CORRIGIR SENHA DO ADMIN =============
+    usuarios = load_usuarios()
+    
+    if "admin" not in usuarios:
+        usuarios["admin"] = hash_password(SENHA_APP)
+        save_usuarios(usuarios)
+    elif usuarios["admin"] != hash_password(SENHA_APP):
+        usuarios["admin"] = hash_password(SENHA_APP)
+        save_usuarios(usuarios)
+    
     st.markdown("""
     <div style='text-align: center; padding: 60px 20px;'>
         <h1 style='color: #1e3a8a; margin-bottom: 10px;'>⚖️ PAINEL SUPREMO DO SETE</h1>
@@ -648,24 +649,21 @@ if not st.session_state.autenticado:
     with col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         
-        usuario = st.text_input("👤 Usuário", placeholder="Digite seu usuário")
+        usuario = st.text_input("👤 Usuário", placeholder="Digite seu usuário", value="admin")
         senha = st.text_input("🔐 Senha", type="password", placeholder="Digite sua senha")
         
         if st.button("🔓 ACESSAR", use_container_width=True, type="primary"):
             usuarios = load_usuarios()
             
-            # Usar senha do secrets, NUNCA hardcoded
-            if not usuarios:
-                usuarios["admin"] = hash_password(SENHA_APP)
-                save_usuarios(usuarios)
-            
             if usuario in usuarios and usuarios[usuario] == hash_password(senha):
                 st.session_state.autenticado = True
                 st.session_state.usuario = usuario
                 criar_sessao(usuario)
+                st.success("✅ Login feito com sucesso!")
                 st.rerun()
             else:
                 st.error("❌ Usuário ou senha incorretos")
+                st.info("💡 Use 'admin' como usuário e a senha do SENHA_APP")
         
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -781,11 +779,12 @@ else:
         with col1:
             uf = st.selectbox("UF", ["SP","RJ","MG","PE","BA","CE","PR","RS","SC","GO","DF","ES","AM","PA","MA","MT","MS","PB","RN","AL","SE","PI","RO","TO","AC","AP","RR"])
         with col2:
-            oab = st.text_input("OAB (5 dígitos)", max_chars=5)
+            oab = st.text_input("OAB (6 dígitos)", max_chars=6)
         
         if st.button("🚀 Consultar Telegram", use_container_width=True, type="primary"):
-            if len(re.sub(r'\D', '', oab)) != 5:
-                st.error("❌ OAB deve ter 5 números")
+            # Alterado de 5 para 6 dígitos
+            if len(re.sub(r'\D', '', oab)) != 6:
+                st.error("❌ OAB deve ter 6 números")
             else:
                 with st.spinner("🔄 Consultando..."):
                     comando = f"/oab {uf.lower()}{re.sub(r'\D', '', oab)}"
@@ -909,7 +908,6 @@ else:
                         if p['restrito']:
                             st.markdown('<div class="restricted-alert">🔒 PROCESSO RESTRITO - Res. 121 / Sigilo</div>', unsafe_allow_html=True)
                         
-                        # Informações básicas
                         col1, col2 = st.columns(2)
                         with col1:
                             st.markdown(f"**Tribunal:** {p['tribunal']}")
